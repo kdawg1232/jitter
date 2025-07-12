@@ -6,7 +6,7 @@ import { colors } from '@/constants/colors';
 // Import screens
 import TrackerScreen from '@/screens/TrackerScreen';
 import StatsScreen from '@/screens/StatsScreen';
-import ProfileScreen from '@/screens/ProfileScreen';
+import { ProfileScreen } from '@/screens/ProfileScreen'; // Changed to named import
 import CrashoutClockScreen from '@/screens/CrashoutClockScreen';
 
 const Tab = createBottomTabNavigator();

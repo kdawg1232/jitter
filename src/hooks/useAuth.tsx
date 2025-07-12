@@ -118,11 +118,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, firstName: string, lastName: string, username: string) => {
     try {
       setState(prev => ({ ...prev, loading: true }));
       
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
       });
@@ -130,6 +130,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) {
         setState(prev => ({ ...prev, loading: false }));
         return { error: error.message };
+      }
+
+      // If user was created successfully, update their profile
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .update({
+            first_name: firstName,
+            last_name: lastName,
+            username: username,
+          })
+          .eq('id', data.user.id);
+
+        if (profileError) {
+          console.error('Profile update error:', profileError);
+          // Don't return error here as the user was created successfully
+        }
       }
 
       return { error: null };

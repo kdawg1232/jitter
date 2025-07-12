@@ -1,197 +1,138 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
-import { useAuth } from '../hooks/useAuth';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../constants/theme';
 
 export const OnboardingScreen: React.FC = () => {
-  const [dailyLimit, setDailyLimit] = useState('400');
-  const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+  const navigation = useNavigation();
 
-  const handleComplete = async () => {
-    const limitNumber = parseInt(dailyLimit);
-    
-    if (isNaN(limitNumber) || limitNumber <= 0) {
-      Alert.alert('Error', 'Please enter a valid daily caffeine limit');
-      return;
-    }
-
-    if (limitNumber > 1000) {
-      Alert.alert('Warning', 'That seems like a very high daily limit. Are you sure?', [
-        { text: 'Change', style: 'cancel' },
-        { text: 'Continue', onPress: completeOnboarding },
-      ]);
-      return;
-    }
-
-    completeOnboarding();
+  const handleSignUp = () => {
+    navigation.navigate('SignUp' as never);
   };
 
-  const completeOnboarding = async () => {
-    setLoading(true);
-    // TODO: Save user profile data to Supabase
-    // This will be implemented in Phase 4 when we set up the database
-    
-    // For now, just simulate saving and proceed
-    setTimeout(() => {
-      setLoading(false);
-      Alert.alert('Welcome!', 'Your profile has been set up successfully!');
-    }, 1000);
+  const handleLogin = () => {
+    navigation.navigate('Login' as never);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome to Jitter!</Text>
-          <Text style={styles.subtitle}>
-            Let's set up your profile to get started with tracking your caffeine intake
-          </Text>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={theme.colors.primary} />
+      
+      {/* Background Gradient */}
+      <LinearGradient
+        colors={[theme.colors.primary, theme.colors.secondary]}
+        style={styles.gradient}
+      >
+        {/* Logo/Icon */}
+        <View style={styles.logoContainer}>
+          <View style={styles.logoCircle}>
+            <Ionicons name="flash" size={48} color={theme.colors.primary} />
+          </View>
         </View>
 
+        {/* Main Content */}
         <View style={styles.content}>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Daily Caffeine Limit</Text>
-            <Text style={styles.sectionSubtitle}>
-              The FDA recommends no more than 400mg of caffeine per day for healthy adults
-            </Text>
-            
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Daily Limit (mg)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="400"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={dailyLimit}
-                onChangeText={setDailyLimit}
-                keyboardType="numeric"
-              />
-            </View>
+          <Text style={styles.title}>Let's get started!</Text>
+          
+          {/* Sign Up Button */}
+          <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
+            <Text style={styles.signUpButtonText}>Sign Up</Text>
+          </TouchableOpacity>
 
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                💡 Don't worry, you can change this later in your profile settings
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleComplete}
-              disabled={loading}
-            >
-              <Text style={styles.buttonText}>
-                {loading ? 'Setting up...' : 'Complete Setup'}
-              </Text>
+          {/* Login Link */}
+          <View style={styles.loginContainer}>
+            <Text style={styles.loginText}>Already have an account? </Text>
+            <TouchableOpacity onPress={handleLogin}>
+              <Text style={styles.loginLink}>Log in</Text>
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.primary,
   },
-  scrollContainer: {
-    flexGrow: 1,
-    padding: theme.spacing.xl,
-  },
-  header: {
+  gradient: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: theme.spacing.xl,
-    paddingTop: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.xl,
   },
-  title: {
-    ...theme.typography.heading,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.sm,
-    textAlign: 'center',
+  logoContainer: {
+    position: 'absolute',
+    top: '20%',
+    alignItems: 'center',
   },
-  subtitle: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
+  logoCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#F9F9FB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   content: {
     flex: 1,
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 60,
   },
-  section: {
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: theme.spacing.xxl,
+  },
+  signUpButton: {
+    backgroundColor: '#FFA500',
+    borderRadius: theme.borderRadius.md,
+    paddingVertical: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.xl,
+    width: '100%',
+    alignItems: 'center',
     marginBottom: theme.spacing.xl,
   },
-  sectionTitle: {
-    ...theme.typography.subheading,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.sm,
+  signUpButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
   },
-  sectionSubtitle: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.lg,
-    lineHeight: 20,
-  },
-  inputContainer: {
-    marginBottom: theme.spacing.md,
-  },
-  label: {
-    ...theme.typography.subheading,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.sm,
-  },
-  input: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    fontSize: 16,
-    color: theme.colors.textPrimary,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  infoBox: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.primary,
-  },
-  infoText: {
-    ...theme.typography.body,
-    color: theme.colors.textSecondary,
-    fontStyle: 'italic',
-  },
-  buttonContainer: {
-    marginTop: theme.spacing.xl,
-  },
-  button: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.md,
+  loginContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginTop: theme.spacing.md,
   },
-  buttonDisabled: {
-    backgroundColor: theme.colors.textSecondary,
+  loginText: {
+    color: '#FFFFFF',
+    fontSize: 16,
   },
-  buttonText: {
-    ...theme.typography.subheading,
-    color: theme.colors.surface,
+  loginLink: {
+    color: '#FFA500',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

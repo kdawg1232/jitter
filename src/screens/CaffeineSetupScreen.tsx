@@ -13,34 +13,57 @@ import {
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
-import { AuthStackParamList } from '../types';
+import { useUserProfile } from '../hooks/useDatabase';
 import { theme } from '../constants/theme';
 
-type LoginScreenNavigationProp = StackNavigationProp<AuthStackParamList, 'Login'>;
-
-export const LoginScreen: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export const CaffeineSetupScreen: React.FC = () => {
+  const [dailyLimit, setDailyLimit] = useState('400');
   const [loading, setLoading] = useState(false);
-  const navigation = useNavigation<LoginScreenNavigationProp>();
-  const { signIn } = useAuth();
+  const { user } = useAuth();
+  const { updateProfile } = useUserProfile();
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleComplete = async () => {
+    const limitNumber = parseInt(dailyLimit);
+    
+    if (isNaN(limitNumber) || limitNumber <= 0) {
+      Alert.alert('Error', 'Please enter a valid daily caffeine limit');
       return;
     }
 
-    setLoading(true);
-    const { error } = await signIn(email, password);
-    setLoading(false);
+    if (limitNumber > 1000) {
+      Alert.alert('Warning', 'That seems like a very high daily limit. Are you sure?', [
+        { text: 'Change', style: 'cancel' },
+        { text: 'Continue', onPress: completeSetup },
+      ]);
+      return;
+    }
 
-    if (error) {
-      Alert.alert('Login Failed', error);
+    completeSetup();
+  };
+
+  const completeSetup = async () => {
+    setLoading(true);
+    
+    try {
+      // Save user profile data to Supabase
+      const { error } = await updateProfile({
+        daily_limit_mg: parseInt(dailyLimit),
+      });
+
+      if (error) {
+        Alert.alert('Error', 'Failed to save your profile. Please try again.');
+        console.error('Setup error:', error);
+      } else {
+        Alert.alert('Welcome to Jitter!', 'Your profile has been set up successfully!');
+        // The RootNavigator will automatically detect the profile update and navigate to the main app
+      }
+    } catch (error) {
+      console.error('Setup error:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -60,54 +83,44 @@ export const LoginScreen: React.FC = () => {
             {/* Logo */}
             <View style={styles.logoContainer}>
               <View style={styles.logoCircle}>
-                <Ionicons name="flash" size={32} color={theme.colors.primary} />
+                <Ionicons name="flash" size={48} color={theme.colors.primary} />
               </View>
             </View>
 
             {/* White Card */}
             <View style={styles.card}>
+              <Text style={styles.cardTitle}>Set Your Daily Limit</Text>
+              <Text style={styles.cardSubtitle}>
+                The FDA recommends no more than 400mg of caffeine per day for healthy adults
+              </Text>
+              
               <View style={styles.inputContainer}>
-                <Text style={styles.label}>Email Address</Text>
+                <Text style={styles.label}>Daily Limit (mg)</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Enter your email"
+                  placeholder="400"
                   placeholderTextColor="#A0A0A0"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
+                  value={dailyLimit}
+                  onChangeText={setDailyLimit}
+                  keyboardType="numeric"
                 />
               </View>
 
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#A0A0A0"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
+                  💡 Don't worry, you can change this later in your profile settings
+                </Text>
               </View>
 
               <TouchableOpacity
-                style={[styles.loginButton, loading && styles.buttonDisabled]}
-                onPress={handleLogin}
+                style={[styles.completeButton, loading && styles.buttonDisabled]}
+                onPress={handleComplete}
                 disabled={loading}
               >
-                <Text style={styles.loginButtonText}>
-                  {loading ? 'Signing In...' : 'Log In'}
+                <Text style={styles.completeButtonText}>
+                  {loading ? 'Setting up...' : 'Complete Setup'}
                 </Text>
               </TouchableOpacity>
-
-              <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don't have an account? </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-                  <Text style={styles.signUpLink}>Sign up</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -138,20 +151,20 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xl,
   },
   logoCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: '#F9F9FB',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -165,6 +178,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
+  },
+  cardTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+    textAlign: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: theme.spacing.xl,
+    lineHeight: 20,
   },
   inputContainer: {
     marginBottom: theme.spacing.lg,
@@ -184,35 +211,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E0E0',
   },
-  loginButton: {
+  infoBox: {
+    backgroundColor: '#F0F8FF',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.xl,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#666666',
+    fontStyle: 'italic',
+  },
+  completeButton: {
     backgroundColor: '#FFA500',
     borderRadius: theme.borderRadius.md,
     paddingVertical: theme.spacing.lg,
     paddingHorizontal: theme.spacing.xl,
     alignItems: 'center',
-    marginBottom: theme.spacing.lg,
-    marginTop: theme.spacing.md,
   },
   buttonDisabled: {
     backgroundColor: '#D0D0D0',
   },
-  loginButtonText: {
+  completeButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '600',
-  },
-  signUpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  signUpText: {
-    color: '#666666',
-    fontSize: 14,
-  },
-  signUpLink: {
-    color: '#FFA500',
-    fontSize: 14,
     fontWeight: '600',
   },
 }); 

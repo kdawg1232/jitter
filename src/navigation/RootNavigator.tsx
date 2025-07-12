@@ -1,29 +1,92 @@
-import React from 'react';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { AuthNavigator } from './AuthNavigator';
-import { TabNavigator } from './TabNavigator';
+import TabNavigator from './TabNavigator';
+import { LoadingSpinner } from '../components';
 import { theme } from '../constants/theme';
+import { supabase } from '../constants/supabase';
+import { CaffeineSetupScreen } from '../screens/CaffeineSetupScreen';
 
 export const RootNavigator: React.FC = () => {
   const { user, loading, initialized } = useAuth();
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+
+  useEffect(() => {
+    if (user && initialized) {
+      fetchUserProfile();
+    } else if (!user && initialized) {
+      setProfileLoading(false);
+    }
+  }, [user, initialized]);
+
+  useEffect(() => {
+    // Set up real-time subscription for user profile changes
+    if (user) {
+      const subscription = supabase
+        .channel('user-profile-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'users',
+            filter: `id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('User profile updated:', payload);
+            setUserProfile(payload.new);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [user]);
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user?.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching user profile:', error);
+      } else {
+        setUserProfile(data);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
 
   // Show loading screen while initializing
-  if (!initialized || loading) {
+  if (!initialized || (user && profileLoading)) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <LoadingSpinner variant="overlay" />
       </View>
     );
   }
 
-  // Show auth screens if user is not authenticated
+  // Show auth screens if not authenticated
   if (!user) {
     return <AuthNavigator />;
   }
 
-  // Show main app if user is authenticated
+  // Show setup screen if user hasn't completed caffeine setup
+  if (userProfile && userProfile.daily_limit_mg === null) {
+    return <CaffeineSetupScreen />;
+  }
+
+  // Show main app if authenticated and setup is complete
   return <TabNavigator />;
 };
 

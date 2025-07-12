@@ -2,7 +2,7 @@ export const colors = {
   // Primary colors
   primary: '#A259FF',      // Medium Slate Blue - main interactive elements
   secondary: '#C18DFF',    // Lavender - secondary buttons, progress indicators
-  background: '#1F1F1F',   // Eerie Black - dark background elements
+  background: '#E8D5FF',   
   surface: '#F9F9FB',      // Seasalt - card backgrounds, light sections
   border: '#E0E0E0',       // Platinum - borders, strokes, secondary text
   
@@ -12,7 +12,11 @@ export const colors = {
   error: '#F44336',
   info: '#2196F3',
   
-  // Text colors
+  // Text colors (for easy access)
+  textPrimary: '#000000',
+  textSecondary: '#666666',
+  
+  // Text colors (nested structure)
   text: {
     primary: '#000000',
     secondary: '#666666',
