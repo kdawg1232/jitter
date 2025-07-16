@@ -1,29 +1,30 @@
 import React, { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GetStartedScreen } from './src/screens';
+import { MainAppContainer } from './src/components';
 
 export default function App() {
-  const [hasStarted, setHasStarted] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<'getStarted' | 'main'>('getStarted');
 
   const handleGetStarted = () => {
-    setHasStarted(true);
-    // TODO: Navigate to main app screens
+    setCurrentScreen('main');
   };
 
-  if (!hasStarted) {
-    return (
-      <>
-        <StatusBar style="auto" backgroundColor="#F3ECFF" />
-        <GetStartedScreen onGetStarted={handleGetStarted} />
-      </>
-    );
-  }
+  const renderCurrentScreen = () => {
+    switch (currentScreen) {
+      case 'getStarted':
+        return <GetStartedScreen onGetStarted={handleGetStarted} />;
+      case 'main':
+        return <MainAppContainer />;
+      default:
+        return <GetStartedScreen onGetStarted={handleGetStarted} />;
+    }
+  };
 
-  // TODO: Replace with main app content later
   return (
     <>
       <StatusBar style="auto" backgroundColor="#F3ECFF" />
-      {/* Main app content will go here */}
+      {renderCurrentScreen()}
     </>
   );
 }

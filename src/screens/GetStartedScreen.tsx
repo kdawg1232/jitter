@@ -6,6 +6,7 @@ import {
   StyleSheet,
   SafeAreaView,
   Dimensions,
+  Image,
 } from 'react-native';
 import { Theme } from '../theme/colors';
 
@@ -19,8 +20,21 @@ export const GetStartedScreen: React.FC<GetStartedScreenProps> = ({ onGetStarted
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Empty space where animation would be */}
-        <View style={styles.animationSpace} />
+        {/* Center section with mascot and text */}
+        <View style={styles.centerSection}>
+          <View style={styles.mascotContainer}>
+            <Image 
+              source={require('../../assets/purplejittermascot.png')} 
+              style={styles.mascotImage}
+              resizeMode="contain"
+            />
+          </View>
+          
+          <View style={styles.heroTextContainer}>
+            <Text style={styles.heroText}>avoid the jitters.</Text>
+            <Text style={styles.heroText}>nail your focus.</Text>
+          </View>
+        </View>
         
         {/* Bottom section with button and terms */}
         <View style={styles.bottomSection}>
@@ -51,9 +65,30 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'space-between',
   },
-  animationSpace: {
+  centerSection: {
     flex: 1,
-    // Empty space for where animation would go
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  mascotContainer: {
+    marginBottom: Theme.spacing.xl,
+  },
+  mascotImage: {
+    width: 180,
+    height: 216,
+  },
+  heroTextContainer: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xxl,
+  },
+  heroText: {
+    ...Theme.fonts.bigTitle,
+    fontSize: 36,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
+    lineHeight: 42,
+    marginBottom: Theme.spacing.xs,
   },
   bottomSection: {
     paddingHorizontal: Theme.spacing.lg,
