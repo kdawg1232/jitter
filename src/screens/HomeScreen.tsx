@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 
@@ -21,10 +22,17 @@ interface HomeScreenProps {
   // Add navigation props later if needed
 }
 
+interface DrinkRecord {
+  id: string;
+  name: string;
+  caffeineAmount: number; // in mg
+  completionPercentage: number; // 0-100
+  timeToConsume: string; // formatted time (HH:MM:SS)
+  actualCaffeineConsumed: number; // calculated value
+  recordedAt: Date;
+}
+
 export const HomeScreen: React.FC<HomeScreenProps> = () => {
-  // State for crash risk score (placeholder for now)
-  const [crashRiskScore] = useState(69); // Placeholder value
-  
   // Timer state
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
@@ -38,9 +46,77 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const [customTime, setCustomTime] = useState('');
   const [timeDigits, setTimeDigits] = useState(''); // Raw digits for time input
   
+  // Drinks of the day state
+  const [todaysDrinks, setTodaysDrinks] = useState<DrinkRecord[]>([]);
+  const [totalDailyCaffeine, setTotalDailyCaffeine] = useState(0);
+  const [crashRiskScore, setCrashRiskScore] = useState(0);
+  
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
   const customTimeInputRef = useRef<TextInput>(null);
+
+  // Storage functions
+  const STORAGE_KEY = 'jitter_drinks_data';
+
+  const saveDrinksToStorage = async (drinks: DrinkRecord[]) => {
+    try {
+      const today = new Date().toDateString();
+      const dataToSave = {
+        date: today,
+        drinks: drinks
+      };
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+    } catch (error) {
+      console.error('Error saving drinks to storage:', error);
+    }
+  };
+
+  const loadDrinksFromStorage = async () => {
+    try {
+      const savedData = await AsyncStorage.getItem(STORAGE_KEY);
+      if (savedData) {
+        const parsedData = JSON.parse(savedData);
+        const today = new Date().toDateString();
+        
+        // Only load drinks if they're from today
+        if (parsedData.date === today && parsedData.drinks) {
+          const drinks = parsedData.drinks.map((drink: any) => ({
+            ...drink,
+            recordedAt: new Date(drink.recordedAt)
+          }));
+          setTodaysDrinks(drinks);
+          return drinks;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Error loading drinks from storage:', error);
+      return [];
+    }
+  };
+
+  // Calculate total daily caffeine
+  const calculateTotalCaffeine = (drinks: DrinkRecord[]): number => {
+    return drinks.reduce((total, drink) => total + drink.actualCaffeineConsumed, 0);
+  };
+
+  // Calculate crash risk score based on caffeine intake
+  const calculateCrashRiskScore = (totalCaffeine: number): number => {
+    // Scale 0-400mg caffeine to 0-100 crash risk score
+    return Math.min(Math.round((totalCaffeine / 400) * 100), 100);
+  };
+
+  // Load drinks on component mount
+  useEffect(() => {
+    const initializeData = async () => {
+      const drinks = await loadDrinksFromStorage();
+      const total = calculateTotalCaffeine(drinks);
+      setTotalDailyCaffeine(total);
+      setCrashRiskScore(calculateCrashRiskScore(total));
+    };
+    
+    initializeData();
+  }, []);
 
   // Timer effect
   useEffect(() => {
@@ -66,11 +142,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Calculate actual caffeine consumed
+  const calculateActualCaffeine = (caffeineAmount: number, completionPercentage: number): number => {
+    return Math.round((caffeineAmount * completionPercentage) / 100);
+  };
+
+  // Get the time it took to drink (either elapsed time or custom time)
+  const getTimeToConsume = (): string => {
+    // If user modified the custom time, use that; otherwise use elapsed time
+    const originalElapsedTimeFormatted = formatTime(elapsedTime);
+    return customTime !== originalElapsedTimeFormatted ? customTime : originalElapsedTimeFormatted;
+  };
+
   // Calculate progress bar fill percentage and color
   const progressPercentage = Math.min(crashRiskScore, 100);
   const getProgressBarColor = () => {
     if (crashRiskScore >= 75) return Theme.colors.accentRed;
     if (crashRiskScore >= 50) return Theme.colors.accentOrange;
+    return Theme.colors.primaryGreen;
+  };
+
+  // Calculate daily caffeine progress bar
+  const dailyCaffeinePercentage = Math.min((totalDailyCaffeine / 400) * 100, 100);
+  const getDailyCaffeineProgressBarColor = () => {
+    if (dailyCaffeinePercentage >= 75) return Theme.colors.accentRed;
+    if (dailyCaffeinePercentage >= 50) return Theme.colors.accentOrange;
     return Theme.colors.primaryGreen;
   };
 
@@ -91,14 +187,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     setTimeDigits(digits);
   };
 
-  const handleRecord = () => {
-    // TODO: Save drink data
-    console.log('Recording drink:', {
-      name: drinkName,
-      caffeine: caffeineAmount,
-      completion: completionPercentage,
-      time: customTime,
-    });
+  const handleRecord = async () => {
+    const caffeineAmountNum = parseFloat(caffeineAmount) || 0;
+    const actualCaffeine = calculateActualCaffeine(caffeineAmountNum, completionPercentage);
+    const timeToConsume = getTimeToConsume();
+    
+    // Create new drink record
+    const newDrink: DrinkRecord = {
+      id: Date.now().toString(), // Simple ID generation
+      name: drinkName || 'Unnamed Drink',
+      caffeineAmount: caffeineAmountNum,
+      completionPercentage,
+      timeToConsume,
+      actualCaffeineConsumed: actualCaffeine,
+      recordedAt: new Date(),
+    };
+    
+    // Add to today's drinks
+    const updatedDrinks = [...todaysDrinks, newDrink];
+    setTodaysDrinks(updatedDrinks);
+    
+    // Update totals
+    const newTotal = calculateTotalCaffeine(updatedDrinks);
+    setTotalDailyCaffeine(newTotal);
+    setCrashRiskScore(calculateCrashRiskScore(newTotal));
+    
+    // Save to storage
+    await saveDrinksToStorage(updatedDrinks);
     
     // Reset everything
     setTimerStarted(false);
@@ -242,12 +357,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
           
           {/* Add Drink Button or Timer Section */}
           {!timerStarted ? (
-            <View style={styles.addDrinkSection}>
-              <TouchableOpacity style={styles.addButton} onPress={handleAddDrink}>
-                <Text style={styles.addButtonText}>+</Text>
-              </TouchableOpacity>
-              <Text style={styles.addDrinkLabel}>add a drink</Text>
-            </View>
+            <>
+              <View style={styles.addDrinkSection}>
+                <TouchableOpacity style={styles.addButton} onPress={handleAddDrink}>
+                  <Text style={styles.addButtonText}>+</Text>
+                </TouchableOpacity>
+                <Text style={styles.addDrinkLabel}>add a drink</Text>
+              </View>
+              
+              {/* Drinks of the Day Section */}
+              {todaysDrinks.length > 0 && (
+                <View style={styles.drinksOfDaySection}>
+                  <Text style={styles.drinksOfDayTitle}>drinks of the day</Text>
+                  {todaysDrinks.map((drink) => (
+                    <View key={drink.id} style={styles.drinkItem}>
+                      <View style={styles.drinkItemHeader}>
+                        <Text style={styles.drinkName}>{drink.name}</Text>
+                        <Text style={styles.drinkTime}>{drink.timeToConsume}</Text>
+                      </View>
+                      <Text style={styles.drinkCaffeine}>
+                        {drink.actualCaffeineConsumed}mg caffeine consumed
+                      </Text>
+                    </View>
+                  ))}
+                  
+                  {/* Daily Caffeine Progress Bar */}
+                  <View style={styles.dailyCaffeineContainer}>
+                    <View style={styles.dailyProgressBarContainer}>
+                      <View style={styles.dailyProgressBarBackground}>
+                        <View 
+                          style={[
+                            styles.dailyProgressBarFill, 
+                            { 
+                              width: `${dailyCaffeinePercentage}%`,
+                              backgroundColor: getDailyCaffeineProgressBarColor()
+                            }
+                          ]} 
+                        />
+                      </View>
+                    </View>
+                    <Text style={styles.dailyCaffeineLabel}>
+                      {totalDailyCaffeine}mg / 400mg total caffeine for day
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </>
           ) : !showFollowUp ? (
             <View style={styles.timerSection}>
               <Text style={styles.timerText}>{formatTime(elapsedTime)}</Text>
@@ -572,5 +727,76 @@ const styles = StyleSheet.create({
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
     marginTop: Theme.spacing.sm,
+  },
+  // Drinks of the day styles
+  drinksOfDaySection: {
+    width: '100%',
+    marginTop: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.md,
+    alignItems: 'flex-start', // Left align the entire section
+  },
+  drinksOfDayTitle: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textSecondary,
+    marginBottom: Theme.spacing.md,
+    textAlign: 'left', // Left align the title
+    textTransform: 'lowercase',
+    alignSelf: 'flex-start',
+  },
+  drinkItem: {
+    width: '100%', // Full width to match progress bar
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: Theme.borderRadius.medium,
+    padding: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
+    shadowColor: Theme.colors.textTertiary,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  drinkItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xs,
+  },
+  drinkName: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    flex: 1,
+  },
+  drinkTime: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontWeight: '500',
+  },
+  drinkCaffeine: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+  },
+  // Daily caffeine progress bar styles
+  dailyCaffeineContainer: {
+    width: '100%',
+    marginTop: Theme.spacing.lg,
+  },
+  dailyProgressBarContainer: {
+    marginBottom: Theme.spacing.xs,
+  },
+  dailyProgressBarBackground: {
+    width: '100%', // Same width as drink items
+    height: 6, // Skinnier than the main progress bar (was 8)
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  dailyProgressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  dailyCaffeineLabel: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    textAlign: 'left',
   },
 }); 

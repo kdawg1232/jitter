@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Theme } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
@@ -28,6 +29,14 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
     { key: 'settings', label: 'settings', icon: '⚙️' },
   ];
 
+  const handleTabPress = (tab: TabType) => {
+    // Only trigger haptics if switching to a different tab
+    if (activeTab !== tab) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onTabPress(tab);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.tabContainer}>
@@ -38,7 +47,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
               styles.tab,
               activeTab === tab.key && styles.activeTab,
             ]}
-            onPress={() => onTabPress(tab.key)}
+            onPress={() => handleTabPress(tab.key)}
           >
             <Text style={styles.tabIcon}>{tab.icon}</Text>
             <Text
