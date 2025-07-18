@@ -12,9 +12,10 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
+import { UserProfile, DrinkRecord, CrashRiskResult } from '../types';
+import { StorageService, CrashRiskService, ValidationService } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -22,15 +23,7 @@ interface HomeScreenProps {
   // Add navigation props later if needed
 }
 
-interface DrinkRecord {
-  id: string;
-  name: string;
-  caffeineAmount: number; // in mg
-  completionPercentage: number; // 0-100
-  timeToConsume: string; // formatted time (HH:MM:SS)
-  actualCaffeineConsumed: number; // calculated value
-  recordedAt: Date;
-}
+// Using DrinkRecord from types - removed local interface
 
 export const HomeScreen: React.FC<HomeScreenProps> = () => {
   // Timer state
@@ -51,47 +44,49 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const [totalDailyCaffeine, setTotalDailyCaffeine] = useState(0);
   const [crashRiskScore, setCrashRiskScore] = useState(0);
   
+  // New state for crash risk calculation
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [lastNightSleep, setLastNightSleep] = useState<number>(7.5);
+  const [crashRiskResult, setCrashRiskResult] = useState<CrashRiskResult | null>(null);
+  const [isCalculatingRisk, setIsCalculatingRisk] = useState(false);
+  
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
   const customTimeInputRef = useRef<TextInput>(null);
 
-  // Storage functions
-  const STORAGE_KEY = 'jitter_drinks_data';
-
-  const saveDrinksToStorage = async (drinks: DrinkRecord[]) => {
+  // Load user data and initialize
+  const loadUserData = async () => {
     try {
-      const today = new Date().toDateString();
-      const dataToSave = {
-        date: today,
-        drinks: drinks
-      };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+      // Load user profile
+      const profile = await StorageService.getUserProfile();
+      setUserProfile(profile);
+      
+      // Load last night's sleep
+      if (profile) {
+        const sleepData = await StorageService.getLastNightSleep(profile.userId);
+        setLastNightSleep(sleepData || 7.5);
+      }
+      
+      // Load today's drinks
+      if (profile) {
+        const drinks = await StorageService.getDrinksLast24Hours(profile.userId);
+        setTodaysDrinks(drinks);
+        return drinks;
+      }
+      
+      return [];
     } catch (error) {
-      console.error('Error saving drinks to storage:', error);
+      console.error('Error loading user data:', error);
+      return [];
     }
   };
 
-  const loadDrinksFromStorage = async () => {
+  // Migrate legacy data if needed
+  const migrateLegacyData = async () => {
     try {
-      const savedData = await AsyncStorage.getItem(STORAGE_KEY);
-      if (savedData) {
-        const parsedData = JSON.parse(savedData);
-        const today = new Date().toDateString();
-        
-        // Only load drinks if they're from today
-        if (parsedData.date === today && parsedData.drinks) {
-          const drinks = parsedData.drinks.map((drink: any) => ({
-            ...drink,
-            recordedAt: new Date(drink.recordedAt)
-          }));
-          setTodaysDrinks(drinks);
-          return drinks;
-        }
-      }
-      return [];
+      await StorageService.migrateLegacyDrinkData();
     } catch (error) {
-      console.error('Error loading drinks from storage:', error);
-      return [];
+      console.error('Error migrating legacy data:', error);
     }
   };
 
@@ -100,23 +95,63 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     return drinks.reduce((total, drink) => total + drink.actualCaffeineConsumed, 0);
   };
 
-  // Calculate crash risk score based on caffeine intake
-  const calculateCrashRiskScore = (totalCaffeine: number): number => {
-    // Scale 0-400mg caffeine to 0-100 crash risk score
-    return Math.min(Math.round((totalCaffeine / 400) * 100), 100);
+  // Calculate crash risk score using the real algorithm
+  const updateCrashRiskScore = async () => {
+    if (!userProfile) {
+      setCrashRiskScore(0);
+      return;
+    }
+
+    try {
+      setIsCalculatingRisk(true);
+      
+      // Check cache first
+      const cachedResult = await StorageService.getCrashRiskCache();
+      if (cachedResult) {
+        setCrashRiskResult(cachedResult);
+        setCrashRiskScore(cachedResult.score);
+        setIsCalculatingRisk(false);
+        return;
+      }
+
+      // Calculate new risk score
+      const result = CrashRiskService.calculateCrashRisk(
+        userProfile,
+        todaysDrinks,
+        lastNightSleep
+      );
+
+      setCrashRiskResult(result);
+      setCrashRiskScore(result.score);
+
+      // Cache the result
+      await StorageService.saveCrashRiskCache(result);
+    } catch (error) {
+      console.error('Error calculating crash risk:', error);
+      setCrashRiskScore(0);
+    } finally {
+      setIsCalculatingRisk(false);
+    }
   };
 
   // Load drinks on component mount
   useEffect(() => {
     const initializeData = async () => {
-      const drinks = await loadDrinksFromStorage();
+      await migrateLegacyData();
+      const drinks = await loadUserData();
       const total = calculateTotalCaffeine(drinks);
       setTotalDailyCaffeine(total);
-      setCrashRiskScore(calculateCrashRiskScore(total));
     };
     
     initializeData();
   }, []);
+
+  // Recalculate crash risk when data changes
+  useEffect(() => {
+    if (userProfile && todaysDrinks.length >= 0) {
+      updateCrashRiskScore();
+    }
+  }, [userProfile, todaysDrinks, lastNightSleep]);
 
   // Timer effect
   useEffect(() => {
@@ -193,27 +228,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     const timeToConsume = getTimeToConsume();
     
     // Create new drink record
+    const now = new Date();
     const newDrink: DrinkRecord = {
       id: Date.now().toString(), // Simple ID generation
+      userId: userProfile?.userId || 'unknown',
       name: drinkName || 'Unnamed Drink',
       caffeineAmount: caffeineAmountNum,
       completionPercentage,
       timeToConsume,
       actualCaffeineConsumed: actualCaffeine,
-      recordedAt: new Date(),
+      timestamp: now, // When consumption started
+      recordedAt: now, // When record was created
     };
     
-    // Add to today's drinks
-    const updatedDrinks = [...todaysDrinks, newDrink];
-    setTodaysDrinks(updatedDrinks);
+    // Save drink to storage first
+    await StorageService.addDrinkRecord(newDrink);
     
-    // Update totals
-    const newTotal = calculateTotalCaffeine(updatedDrinks);
-    setTotalDailyCaffeine(newTotal);
-    setCrashRiskScore(calculateCrashRiskScore(newTotal));
+    // Clear cache to force recalculation
+    await StorageService.clearCrashRiskCache();
     
-    // Save to storage
-    await saveDrinksToStorage(updatedDrinks);
+    // Reload drinks from storage to ensure state consistency
+    if (userProfile) {
+      const updatedDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+      setTodaysDrinks(updatedDrinks);
+      
+      // Update totals
+      const newTotal = calculateTotalCaffeine(updatedDrinks);
+      setTotalDailyCaffeine(newTotal);
+    }
+    
+    // Update crash risk score
+    await updateCrashRiskScore();
     
     // Reset everything
     setTimerStarted(false);
@@ -336,7 +381,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
           
           {/* Crash Risk Score */}
           <View style={styles.scoreContainer}>
-            <Text style={styles.scoreNumber}>{crashRiskScore}</Text>
+            <Text style={styles.scoreNumber}>
+              {isCalculatingRisk ? '...' : Math.round(crashRiskScore)}
+            </Text>
             
             {/* Progress Bar */}
             <View style={styles.progressBarContainer}>
@@ -353,6 +400,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
               </View>
             </View>
             <Text style={styles.scoreLabel}>crash risk score</Text>
+            {crashRiskScore === 0 && todaysDrinks.length > 0 && (
+              <Text style={styles.hintText}>Score increases as caffeine drops from peak</Text>
+            )}
           </View>
           
           {/* Add Drink Button or Timer Section */}
@@ -568,6 +618,13 @@ const styles = StyleSheet.create({
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
     textTransform: 'lowercase',
+  },
+  hintText: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textTertiary,
+    fontSize: 10,
+    marginTop: Theme.spacing.xs,
+    textAlign: 'center',
   },
   addDrinkSection: {
     alignItems: 'center',

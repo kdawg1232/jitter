@@ -56,7 +56,8 @@ export interface CrashRiskFactors {
   delta: number;          // Caffeine concentration drop (0-1)
   sleepDebt: number;      // Sleep deficit factor (0-1)
   tolerance: number;      // Caffeine tolerance factor (0-1)
-  metabolic: number;      // Personal metabolism modifier (0.9-1.1)
+  metabolic: number;      // Personal metabolism modifier (0.8-1.2)
+  circadian: number;      // Time-of-day sensitivity factor (0-1)
 }
 
 export interface CrashRiskResult {

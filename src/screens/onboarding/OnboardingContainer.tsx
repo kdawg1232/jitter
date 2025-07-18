@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { OnboardingData, initialOnboardingData } from '../../types/onboarding';
-import { UserProfile, STORAGE_KEYS } from '../../types';
+import { UserProfile } from '../../types';
+import { StorageService } from '../../services';
 import { OnboardingWelcomeScreen } from './OnboardingWelcomeScreen';
 import { OnboardingProfileScreen } from './OnboardingProfileScreen';
 import { OnboardingHealthScreen } from './OnboardingHealthScreen';
@@ -51,14 +51,24 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
 
   const handleComplete = async () => {
     try {
+      console.log('🎯 Completing onboarding with data:', {
+        weightKg: onboardingData.weightKg,
+        age: onboardingData.age,
+        sex: onboardingData.sex,
+        smoker: onboardingData.smoker,
+        pregnant: onboardingData.pregnant,
+        oralContraceptives: onboardingData.oralContraceptives,
+        lastNightSleep: onboardingData.lastNightSleep,
+        trackSleepDaily: onboardingData.trackSleepDaily
+      });
+
       // Convert onboarding data to user profile
       const userProfile = convertOnboardingToUserProfile(onboardingData);
+      console.log('👤 Created user profile:', userProfile);
       
-      // Save user profile to AsyncStorage
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.USER_PROFILE, 
-        JSON.stringify(userProfile)
-      );
+      // Save user profile using StorageService
+      await StorageService.saveUserProfile(userProfile);
+      console.log('✅ User profile saved successfully');
       
       // Initialize sleep records if tracking is enabled
       if (onboardingData.trackSleepDaily && onboardingData.lastNightSleep) {
@@ -71,19 +81,22 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
           createdAt: new Date(),
         };
         
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.SLEEP_RECORDS,
-          JSON.stringify([sleepRecord])
-        );
+        await StorageService.addSleepRecord(sleepRecord);
+        console.log('😴 Sleep record saved successfully');
       }
+      
+      // Verify the profile was saved correctly
+      const savedProfile = await StorageService.getUserProfile();
+      console.log('🔍 Verification - profile exists:', !!savedProfile);
       
       // Mark onboarding as complete
       updateData({ isComplete: true });
       
       // Call the completion callback
+      console.log('🚀 Calling completion callback - routing to main app');
       onComplete();
     } catch (error) {
-      console.error('Error saving onboarding data:', error);
+      console.error('❌ Error saving onboarding data:', error);
       // Still proceed to main app even if save fails
       onComplete();
     }
