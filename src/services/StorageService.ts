@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, DrinkRecord, SleepRecord, CrashRiskResult, STORAGE_KEYS } from '../types';
+import { UserProfile, DrinkRecord, SleepRecord, CrashRiskResult, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, STORAGE_KEYS } from '../types';
 
 export class StorageService {
   // User Profile Operations
@@ -240,6 +240,16 @@ export class StorageService {
       existingDrinks.push(drink);
       await this.saveDrinksHistory(existingDrinks);
       
+      // Invalidate streak cache since adding a drink could change the streak
+      const today = new Date().toISOString().split('T')[0];
+      const drinkDate = drink.timestamp.toISOString().split('T')[0];
+      
+      // Only recalculate if the drink is from today (could affect current streak)
+      if (drinkDate === today) {
+        console.log('[StorageService] 🔄 Recalculating streak due to new drink today');
+        await this.calculateUnder400Streak(drink.userId, true); // Force recalculate
+      }
+      
       console.log('[StorageService] ✅ Drink record saved successfully. Total drinks:', existingDrinks.length);
     } catch (error) {
       console.error('[StorageService] ❌ Error adding drink record:', error);
@@ -400,6 +410,407 @@ export class StorageService {
     }
   }
 
+  // Calendar and Daily Score Operations
+  static async saveDayScores(dayScores: DayScoreRecord[]): Promise<void> {
+    try {
+      // Keep only last 90 days of scores
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      
+      const recentScores = dayScores.filter(score => {
+        const scoreDate = new Date(score.date);
+        return scoreDate >= ninetyDaysAgo;
+      });
+
+      await AsyncStorage.setItem(STORAGE_KEYS.DAY_SCORES, JSON.stringify(recentScores));
+    } catch (error) {
+      console.error('Error saving day scores:', error);
+      throw new Error('Failed to save day scores');
+    }
+  }
+
+  static async getDayScores(): Promise<DayScoreRecord[]> {
+    try {
+      const scoresData = await AsyncStorage.getItem(STORAGE_KEYS.DAY_SCORES);
+      if (!scoresData) return [];
+      
+      const scores = JSON.parse(scoresData);
+      // Convert date strings back to Date objects
+      return scores.map((score: any) => ({
+        ...score,
+        createdAt: new Date(score.createdAt)
+      }));
+    } catch (error) {
+      console.error('Error loading day scores:', error);
+      return [];
+    }
+  }
+
+  static async addDayScore(score: DayScoreRecord): Promise<void> {
+    try {
+      console.log('[StorageService] Adding day score:', {
+        userId: score.userId,
+        date: score.date,
+        averagePeakScore: score.averagePeakScore,
+        averageCrashRisk: score.averageCrashRisk,
+        totalCaffeine: score.totalCaffeine
+      });
+      
+      const existingScores = await this.getDayScores();
+      
+      // Remove any existing score for the same date and user
+      const filteredScores = existingScores.filter(
+        existing => !(existing.date === score.date && existing.userId === score.userId)
+      );
+      
+      filteredScores.push(score);
+      await this.saveDayScores(filteredScores);
+      
+      // Invalidate streak cache since completing a day could affect the streak
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayKey = yesterday.toISOString().split('T')[0];
+      
+      // If recording score for yesterday, recalculate streak
+      if (score.date === yesterdayKey) {
+        console.log('[StorageService] 🔄 Recalculating streak due to completed day:', score.date);
+        await this.calculateUnder400Streak(score.userId, true); // Force recalculate
+      }
+      
+      console.log('[StorageService] ✅ Day score saved successfully');
+    } catch (error) {
+      console.error('[StorageService] ❌ Error adding day score:', error);
+      throw error;
+    }
+  }
+
+  static async getDayScore(userId: string, date: string): Promise<DayScoreRecord | null> {
+    try {
+      const scores = await this.getDayScores();
+      return scores.find(score => score.userId === userId && score.date === date) || null;
+    } catch (error) {
+      console.error('Error getting day score:', error);
+      return null;
+    }
+  }
+
+  static async getDrinksForMonth(userId: string, year: number, month: number): Promise<DrinkRecord[]> {
+    try {
+      const allDrinks = await this.getDrinksHistory();
+      
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      
+      const monthDrinks = allDrinks.filter(drink => 
+        drink.userId === userId && 
+        drink.timestamp >= monthStart && 
+        drink.timestamp <= monthEnd
+      );
+      
+      console.log('[StorageService] 📅 Getting drinks for month:', {
+        userId,
+        year,
+        month,
+        monthStart: monthStart.toDateString(),
+        monthEnd: monthEnd.toDateString(),
+        totalDrinks: allDrinks.length,
+        monthDrinks: monthDrinks.length
+      });
+      
+      return monthDrinks;
+    } catch (error) {
+      console.error('[StorageService] ❌ Error getting drinks for month:', error);
+      return [];
+    }
+  }
+
+  static async getDrinksForDate(userId: string, date: string): Promise<DrinkRecord[]> {
+    try {
+      const allDrinks = await this.getDrinksHistory();
+      const targetDate = new Date(date);
+      const dayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+      const dayEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+      
+      const dayDrinks = allDrinks.filter(drink => 
+        drink.userId === userId && 
+        drink.timestamp >= dayStart && 
+        drink.timestamp <= dayEnd
+      );
+      
+      return dayDrinks;
+    } catch (error) {
+      console.error('Error getting drinks for date:', error);
+      return [];
+    }
+  }
+
+  // Streak Operations
+  static async saveStreakData(streak: StreakData): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.STREAK_DATA, JSON.stringify(streak));
+    } catch (error) {
+      console.error('Error saving streak data:', error);
+      throw new Error('Failed to save streak data');
+    }
+  }
+
+  static async getStreakData(): Promise<StreakData | null> {
+    try {
+      const streakData = await AsyncStorage.getItem(STORAGE_KEYS.STREAK_DATA);
+      if (!streakData) return null;
+      
+      return JSON.parse(streakData);
+    } catch (error) {
+      console.error('Error loading streak data:', error);
+      return null;
+    }
+  }
+
+  static async calculateCalendarSummary(userId: string, year: number, month: number): Promise<CalendarSummary> {
+    try {
+      const monthDrinks = await this.getDrinksForMonth(userId, year, month);
+      
+      // Group drinks by day
+      const drinksByDay: { [key: string]: DrinkRecord[] } = {};
+      monthDrinks.forEach(drink => {
+        const dateKey = drink.timestamp.toISOString().split('T')[0];
+        if (!drinksByDay[dateKey]) {
+          drinksByDay[dateKey] = [];
+        }
+        drinksByDay[dateKey].push(drink);
+      });
+      
+      // Calculate daily totals
+      const dailyTotals: { [key: string]: number } = {};
+      Object.keys(drinksByDay).forEach(date => {
+        dailyTotals[date] = drinksByDay[date].reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
+      });
+      
+      const totalCaffeine = Object.values(dailyTotals).reduce((sum, daily) => sum + daily, 0);
+      const daysWithData = Object.keys(dailyTotals).length;
+      const averageDailyCaffeine = daysWithData > 0 ? Math.round(totalCaffeine / daysWithData) : 0;
+      
+      // Find worst day
+      let worstDay = null;
+      let maxCaffeine = 0;
+      Object.entries(dailyTotals).forEach(([date, caffeine]) => {
+        if (caffeine > maxCaffeine) {
+          maxCaffeine = caffeine;
+          const dayOfMonth = new Date(date).getDate();
+          worstDay = { day: dayOfMonth, amount: caffeine };
+        }
+      });
+      
+      // Calculate streak (this is complex - let's calculate it properly)
+      const under400Streak = await this.calculateUnder400Streak(userId);
+      
+      return {
+        month,
+        year,
+        totalCaffeine,
+        averageDailyCaffeine,
+        worstDay,
+        under400Streak,
+        daysWithData
+      };
+    } catch (error) {
+      console.error('Error calculating calendar summary:', error);
+      return {
+        month,
+        year,
+        totalCaffeine: 0,
+        averageDailyCaffeine: 0,
+        worstDay: null,
+        under400Streak: 0,
+        daysWithData: 0
+      };
+    }
+  }
+
+  static async calculateUnder400Streak(userId: string, forceRecalculate: boolean = false): Promise<number> {
+    try {
+      const today = new Date();
+      const todayKey = today.toISOString().split('T')[0];
+      
+      console.log('[StorageService] 🔄 Calculating Under 400mg Streak for user:', userId);
+      
+      // Always recalculate for now to debug the issue
+      // Later we can re-enable caching once it works
+      console.log('[StorageService] 🔄 Force recalculating streak (debugging mode)');
+      
+      // Get ALL drinks history (not just recent)
+      const allDrinks = await this.getDrinksHistory();
+      const userDrinks = allDrinks.filter(drink => drink.userId === userId);
+      
+      console.log('[StorageService] 📊 Raw drinks data:', {
+        userId,
+        totalDrinks: allDrinks.length,
+        userDrinks: userDrinks.length,
+        todayKey
+      });
+      
+      // If no drinks for this user, streak is 0
+      if (userDrinks.length === 0) {
+        console.log('[StorageService] ❌ No drinks found for user, streak = 0');
+        return 0;
+      }
+      
+      // Group drinks by date and calculate daily totals
+      const dailyCaffeineByDate: { [date: string]: number } = {};
+      
+      userDrinks.forEach(drink => {
+        const drinkDate = drink.timestamp.toISOString().split('T')[0];
+        if (!dailyCaffeineByDate[drinkDate]) {
+          dailyCaffeineByDate[drinkDate] = 0;
+        }
+        dailyCaffeineByDate[drinkDate] += drink.actualCaffeineConsumed;
+        
+        console.log(`[StorageService] 📊 Drink on ${drinkDate}: +${drink.actualCaffeineConsumed}mg (total: ${dailyCaffeineByDate[drinkDate]}mg)`);
+      });
+      
+      console.log('[StorageService] 📊 Daily caffeine totals:', dailyCaffeineByDate);
+      
+      // Calculate streak: start from today and go backwards
+      let currentStreak = 0;
+      let streakStartDate = todayKey;
+      
+      // Get all dates that have drinks, sorted from newest to oldest
+      const datesWithDrinks = Object.keys(dailyCaffeineByDate).sort().reverse();
+      console.log('[StorageService] 📊 Dates with drinks (newest first):', datesWithDrinks);
+      
+      // Simple logic: go through each day starting from most recent
+      for (const dateKey of datesWithDrinks) {
+        const dailyTotal = dailyCaffeineByDate[dateKey];
+        
+        console.log(`[StorageService] 🧮 Checking date ${dateKey}: ${dailyTotal}mg`);
+        
+        if (dailyTotal < 400) {
+          currentStreak++;
+          streakStartDate = dateKey;
+          console.log(`[StorageService] ✅ Date ${dateKey} counts! Streak now: ${currentStreak}`);
+        } else {
+          console.log(`[StorageService] ❌ Date ${dateKey} breaks streak (${dailyTotal}mg >= 400mg)`);
+          break; // Streak broken
+        }
+        
+        // Special case: if this is the first date we checked and it's not today,
+        // then we need to check if there are any days in between
+        if (currentStreak === 1 && dateKey !== todayKey) {
+          // There's a gap between today and the most recent drink day
+          console.log(`[StorageService] ⚠️ Gap detected: most recent drink is ${dateKey}, but today is ${todayKey}`);
+          // Reset streak since there's a gap
+          currentStreak = 0;
+          break;
+        }
+      }
+      
+      // Alternative approach: check consecutive days backwards from today
+      if (datesWithDrinks.length > 0) {
+        console.log('[StorageService] 🔄 Double-checking with consecutive day approach...');
+        
+        let consecutiveStreak = 0;
+        const checkDate = new Date(today);
+        
+        // Go backwards from today, day by day
+        for (let daysBack = 0; daysBack < 365; daysBack++) {
+          const checkDateKey = checkDate.toISOString().split('T')[0];
+          const dailyTotal = dailyCaffeineByDate[checkDateKey];
+          
+          console.log(`[StorageService] 🧮 Day ${daysBack} ago (${checkDateKey}): ${dailyTotal || 0}mg`);
+          
+          if (dailyTotal !== undefined && dailyTotal < 400) {
+            consecutiveStreak++;
+            console.log(`[StorageService] ✅ Consecutive day ${checkDateKey} counts! Streak: ${consecutiveStreak}`);
+          } else if (dailyTotal !== undefined && dailyTotal >= 400) {
+            console.log(`[StorageService] ❌ Consecutive streak broken on ${checkDateKey}: ${dailyTotal}mg >= 400mg`);
+            break;
+          } else {
+            // No drinks this day
+            if (daysBack === 0) {
+              // Today has no drinks, skip it and continue
+              console.log(`[StorageService] ⏭️ Today has no drinks yet, checking previous days...`);
+            } else {
+              // Previous day has no drinks, streak broken
+              console.log(`[StorageService] ❌ Consecutive streak broken on ${checkDateKey}: no drinks recorded`);
+              break;
+            }
+          }
+          
+          // Move to previous day
+          checkDate.setDate(checkDate.getDate() - 1);
+        }
+        
+        console.log(`[StorageService] 📊 Consecutive approach result: ${consecutiveStreak} vs original: ${currentStreak}`);
+        currentStreak = consecutiveStreak; // Use the consecutive day approach
+      }
+      
+      // Cache the result
+      const streakData: StreakData = {
+        currentStreak,
+        lastCalculatedDate: todayKey,
+        streakStartDate
+      };
+      await this.saveStreakData(streakData);
+      
+      console.log('[StorageService] ✅ Final streak calculation result:', {
+        currentStreak,
+        streakStartDate,
+        lastCalculatedDate: todayKey,
+        userId
+      });
+      
+      return currentStreak;
+      
+    } catch (error) {
+      console.error('[StorageService] ❌ Error calculating under 400 streak:', error);
+      return 0;
+    }
+  }
+
+  static async getCalendarDayData(userId: string, year: number, month: number): Promise<CalendarDayData[]> {
+    try {
+      const monthDrinks = await this.getDrinksForMonth(userId, year, month);
+      const dayScores = await this.getDayScores();
+      
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const today = new Date();
+      const todayKey = today.toISOString().split('T')[0];
+      
+      const calendarDays: CalendarDayData[] = [];
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        const dateKey = date.toISOString().split('T')[0];
+        
+        // Get drinks for this day
+        const dayDrinks = monthDrinks.filter(drink => {
+          const drinkDateKey = drink.timestamp.toISOString().split('T')[0];
+          return drinkDateKey === dateKey;
+        });
+        
+        const totalCaffeine = dayDrinks.reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
+        
+        // Get scores for this day
+        const dayScore = dayScores.find(score => score.userId === userId && score.date === dateKey);
+        
+        calendarDays.push({
+          date: dateKey,
+          dayNumber: day,
+          totalCaffeine,
+          averagePeakScore: dayScore?.averagePeakScore,
+          averageCrashRisk: dayScore?.averageCrashRisk,
+          isToday: dateKey === todayKey,
+          hasData: dayDrinks.length > 0 || !!dayScore
+        });
+      }
+      
+      return calendarDays;
+    } catch (error) {
+      console.error('Error getting calendar day data:', error);
+      return [];
+    }
+  }
+
   // Utility Operations
   static async clearAllData(): Promise<void> {
     try {
@@ -407,7 +818,9 @@ export class StorageService {
         AsyncStorage.removeItem(STORAGE_KEYS.USER_PROFILE),
         AsyncStorage.removeItem(STORAGE_KEYS.SLEEP_RECORDS),
         AsyncStorage.removeItem(STORAGE_KEYS.DRINKS_HISTORY),
-        AsyncStorage.removeItem(STORAGE_KEYS.CRASH_RISK_CACHE)
+        AsyncStorage.removeItem(STORAGE_KEYS.CRASH_RISK_CACHE),
+        AsyncStorage.removeItem(STORAGE_KEYS.DAY_SCORES),
+        AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA)
       ]);
     } catch (error) {
       console.error('Error clearing all data:', error);
@@ -420,20 +833,26 @@ export class StorageService {
     sleepRecordsCount: number;
     drinksCount: number;
     cacheExists: boolean;
+    dayScoresCount: number;
+    streakDataExists: boolean;
   }> {
     try {
-      const [profile, sleepRecords, drinks, cache] = await Promise.all([
+      const [profile, sleepRecords, drinks, cache, dayScores, streakData] = await Promise.all([
         this.getUserProfile(),
         this.getSleepRecords(),
         this.getDrinksHistory(),
-        this.getCrashRiskCache()
+        this.getCrashRiskCache(),
+        this.getDayScores(),
+        this.getStreakData()
       ]);
 
       return {
         profileExists: profile !== null,
         sleepRecordsCount: sleepRecords.length,
         drinksCount: drinks.length,
-        cacheExists: cache !== null
+        cacheExists: cache !== null,
+        dayScoresCount: dayScores.length,
+        streakDataExists: streakData !== null
       };
     } catch (error) {
       console.error('Error getting storage info:', error);
@@ -441,7 +860,9 @@ export class StorageService {
         profileExists: false,
         sleepRecordsCount: 0,
         drinksCount: 0,
-        cacheExists: false
+        cacheExists: false,
+        dayScoresCount: 0,
+        streakDataExists: false
       };
     }
   }

@@ -14,13 +14,23 @@ interface MainAppContainerProps {
 
 export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCleared }) => {
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [statsRefreshTrigger, setStatsRefreshTrigger] = useState(0);
+
+  const handleTabPress = (tab: TabType) => {
+    setActiveTab(tab);
+    
+    // Trigger refresh when stats tab is selected
+    if (tab === 'stats') {
+      setStatsRefreshTrigger(prev => prev + 1);
+    }
+  };
 
   const renderCurrentScreen = () => {
     switch (activeTab) {
       case 'home':
         return <HomeScreen onProfileCleared={onProfileCleared} />;
       case 'stats':
-        return <StatsScreen />;
+        return <StatsScreen refreshTrigger={statsRefreshTrigger} />;
       case 'winnings':
         return <WinningsScreen />;
       case 'settings':
@@ -37,7 +47,7 @@ export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCle
       </View>
       <BottomNavigation 
         activeTab={activeTab} 
-        onTabPress={setActiveTab} 
+        onTabPress={handleTabPress} 
       />
     </View>
   );

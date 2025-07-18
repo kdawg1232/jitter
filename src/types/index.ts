@@ -107,7 +107,9 @@ export const STORAGE_KEYS = {
   USER_PROFILE: 'jitter_user_profile',
   SLEEP_RECORDS: 'jitter_sleep_records',
   DRINKS_HISTORY: 'jitter_drinks_history',
-  CRASH_RISK_CACHE: 'jitter_crash_risk_cache'
+  CRASH_RISK_CACHE: 'jitter_crash_risk_cache',
+  DAY_SCORES: 'jitter_day_scores',
+  STREAK_DATA: 'jitter_streak_data'
 } as const;
 
 // Validation Types
@@ -180,6 +182,45 @@ export type CrashRiskServiceConfig = {
   lastNightSleep: number;
   currentTime?: Date;
 };
+
+// Calendar Types
+export interface DayScoreRecord {
+  userId: string;
+  date: string;                // YYYY-MM-DD format
+  averagePeakScore: number;    // Average peak focus score for the day
+  averageCrashRisk: number;    // Average crash risk score for the day
+  totalCaffeine: number;       // Total caffeine consumed on this day
+  createdAt: Date;
+}
+
+export interface CalendarDayData {
+  date: string;                // YYYY-MM-DD format
+  dayNumber: number;           // Day of the month (1-31)
+  totalCaffeine: number;       // Total caffeine for this day
+  averagePeakScore?: number;   // Average peak score if day is complete
+  averageCrashRisk?: number;   // Average crash risk if day is complete
+  isToday: boolean;            // Whether this is the current day
+  hasData: boolean;            // Whether there's any data for this day
+}
+
+export interface CalendarSummary {
+  month: number;               // 0-11 (January = 0)
+  year: number;
+  totalCaffeine: number;       // Sum of all caffeine for the month
+  averageDailyCaffeine: number; // Average daily caffeine for days with data
+  worstDay: {                  // Day with highest caffeine
+    day: number;
+    amount: number;
+  } | null;
+  under400Streak: number;      // Current consecutive days under 400mg
+  daysWithData: number;        // Number of days in month with recorded data
+}
+
+export interface StreakData {
+  currentStreak: number;       // Current consecutive days under 400mg
+  lastCalculatedDate: string;  // YYYY-MM-DD format of last calculation
+  streakStartDate: string;     // When current streak started
+}
 
 // Re-export onboarding types for convenience
 export * from './onboarding'; 

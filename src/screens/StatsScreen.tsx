@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,29 +9,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { Theme } from '../theme/colors';
+import { StorageService, CrashRiskService, FocusScoreService } from '../services';
+import { UserProfile, CalendarDayData, CalendarSummary, DayScoreRecord } from '../types';
 
 interface StatsScreenProps {
-  // Add navigation props later if needed
+  refreshTrigger?: number; // Trigger data refresh when this changes
 }
-
-// Mock data for demonstration
-const mockCaffeineData: { [key: string]: number } = {
-  '2024-01-01': 120,
-  '2024-01-02': 200,
-  '2024-01-03': 350,
-  '2024-01-04': 80,
-  '2024-01-05': 420,
-  '2024-01-06': 150,
-  '2024-01-07': 280,
-  '2024-01-08': 95,
-  '2024-01-09': 310,
-  '2024-01-10': 180,
-  '2024-01-11': 240,
-  '2024-01-12': 50,
-  '2024-01-13': 160,
-  '2024-01-14': 390,
-  '2024-01-15': 125,
-};
 
 const screenWidth = Dimensions.get('window').width;
 const calendarPadding = Theme.spacing.lg * 2;
@@ -39,19 +22,140 @@ const daySpacing = 10; // Slightly increased spacing between day cells
 const dayWidth = (screenWidth - calendarPadding - (6 * daySpacing)) / 7; // 6 gaps between 7 days
 const dayHeight = dayWidth * 1.6; // Make rectangles significantly taller
 
-export const StatsScreen: React.FC<StatsScreenProps> = () => {
+export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [calendarData, setCalendarData] = useState<CalendarDayData[]>([]);
+  const [summary, setSummary] = useState<CalendarSummary | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dayScoreMode, setDayScoreMode] = useState<{ [key: string]: 'peak' | 'crash' }>({});
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
+  // Load user profile on mount
+  useEffect(() => {
+    const loadAndRefresh = async () => {
+      const profile = await StorageService.getUserProfile();
+      if (profile) {
+        setUserProfile(profile);
+        console.log('📊 Initial load: profile loaded, loading calendar data');
+        // Profile is set, now load calendar data with this profile
+        setIsLoading(true);
+        try {
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth();
+          
+          const [dayData, summaryData] = await Promise.all([
+            StorageService.getCalendarDayData(profile.userId, year, month),
+            StorageService.calculateCalendarSummary(profile.userId, year, month)
+          ]);
+          
+          setCalendarData(dayData);
+          setSummary(summaryData);
+          
+          console.log('📊 Initial calendar data loaded:', {
+            totalCaffeine: summaryData.totalCaffeine,
+            under400Streak: summaryData.under400Streak
+          });
+        } catch (error) {
+          console.error('Error in initial calendar load:', error);
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    };
+    loadAndRefresh();
+  }, []);
+
+  // Load calendar data when month changes
+  useEffect(() => {
+    if (userProfile) {
+      console.log('📊 Month changed, reloading calendar data');
+      loadCalendarData();
+    }
+  }, [currentDate]);
+
+  // Load calendar data when refresh is triggered (tab press)
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0 && userProfile) {
+      console.log('📊 Refresh triggered, reloading calendar data');
+      loadCalendarData();
+    }
+  }, [refreshTrigger]);
+
+  const loadUserProfile = async () => {
+    try {
+      const profile = await StorageService.getUserProfile();
+      setUserProfile(profile);
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
+
+  const loadCalendarData = async () => {
+    try {
+      setIsLoading(true);
+      
+      let currentProfile = userProfile;
+      if (!currentProfile) {
+        currentProfile = await StorageService.getUserProfile();
+        if (!currentProfile) {
+          setIsLoading(false);
+          return;
+        }
+        setUserProfile(currentProfile);
+      }
+
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      
+      console.log('📅 Loading calendar data for:', {
+        userId: currentProfile.userId,
+        month: monthNames[month],
+        year
+      });
+      
+      // Load calendar day data and summary in parallel
+      const [dayData, summaryData] = await Promise.all([
+        StorageService.getCalendarDayData(currentProfile.userId, year, month),
+        StorageService.calculateCalendarSummary(currentProfile.userId, year, month)
+      ]);
+      
+      setCalendarData(dayData);
+      setSummary(summaryData);
+      
+      console.log('📅 Calendar data loaded:', {
+        month: monthNames[month],
+        year,
+        daysWithData: dayData.filter(day => day.hasData).length,
+        totalCaffeine: summaryData.totalCaffeine,
+        under400Streak: summaryData.under400Streak,
+        averageDailyCaffeine: summaryData.averageDailyCaffeine
+      });
+      
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getCaffeineColor = (caffeine: number): string => {
     if (caffeine === 0) return Theme.colors.cardBg;
     if (caffeine <= 150) return Theme.colors.pastelGreen;
     if (caffeine <= 300) return Theme.colors.accentOrange;
     return Theme.colors.accentRed;
+  };
+
+  const getScoreColor = (score: number): string => {
+    // Score ranges from 0-100
+    if (score >= 80) return Theme.colors.primaryGreen;  // Excellent
+    if (score >= 60) return Theme.colors.accentOrange;  // Good
+    if (score >= 40) return Theme.colors.accentRed;     // Poor
+    return Theme.colors.cardStroke;  // Very poor
   };
 
   const getDaysInMonth = (date: Date): number => {
@@ -62,10 +166,6 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
     return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   };
 
-  const formatDateKey = (year: number, month: number, day: number): string => {
-    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  };
-
   const navigateMonth = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
     if (direction === 'prev') {
@@ -74,6 +174,45 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
       newDate.setMonth(newDate.getMonth() + 1);
     }
     setCurrentDate(newDate);
+  };
+
+  const handleDayPress = (dayData: CalendarDayData) => {
+    if (!dayData.hasData || dayData.isToday) return;
+    
+    // Toggle between peak score and crash risk score
+    const currentMode = dayScoreMode[dayData.date] || 'peak';
+    const newMode = currentMode === 'peak' ? 'crash' : 'peak';
+    
+    setDayScoreMode(prev => ({
+      ...prev,
+      [dayData.date]: newMode
+    }));
+  };
+
+  const renderDayContent = (dayData: CalendarDayData) => {
+    const mode = dayScoreMode[dayData.date] || 'peak';
+    
+    if (dayData.isToday) {
+      // Show only day number for today
+      return <Text style={styles.dayText}>{dayData.dayNumber}</Text>;
+    }
+    
+    if (!dayData.hasData) {
+      // Show only day number if no data
+      return <Text style={styles.dayText}>{dayData.dayNumber}</Text>;
+    }
+    
+    // Show day number and score if available
+    const score = mode === 'peak' ? dayData.averagePeakScore : dayData.averageCrashRisk;
+    
+    return (
+      <View style={styles.dayContent}>
+        <Text style={styles.dayText}>{dayData.dayNumber}</Text>
+        {score !== undefined && (
+          <Text style={styles.scoreText}>{Math.round(score)}</Text>
+        )}
+      </View>
+    );
   };
 
   const renderCalendarDays = () => {
@@ -87,20 +226,47 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
       const isValidDay = day >= 1 && day <= daysInMonth;
       
       if (isValidDay) {
-        const dateKey = formatDateKey(currentDate.getFullYear(), currentDate.getMonth(), day);
-        const caffeineLevel = mockCaffeineData[dateKey] || 0;
-        const backgroundColor = getCaffeineColor(caffeineLevel);
+        const dayData = calendarData.find(d => d.dayNumber === day);
+        
+        if (!dayData) {
+          // Fallback for missing data
+          days.push(
+            <View key={day} style={[styles.dayCell, { backgroundColor: Theme.colors.cardBg }]}>
+              <Text style={styles.dayText}>{day}</Text>
+            </View>
+          );
+          continue;
+        }
+
+        // Determine background color
+        let backgroundColor = Theme.colors.cardBg;
+        
+        if (dayData.hasData) {
+          const mode = dayScoreMode[dayData.date] || 'peak';
+          const score = mode === 'peak' ? dayData.averagePeakScore : dayData.averageCrashRisk;
+          
+          if (score !== undefined) {
+            // Use score for color
+            backgroundColor = getScoreColor(score);
+          } else {
+            // Use caffeine for color if no score
+            backgroundColor = getCaffeineColor(dayData.totalCaffeine);
+          }
+        }
 
         days.push(
-          <View
+          <TouchableOpacity
             key={day}
             style={[
               styles.dayCell,
-              { backgroundColor }
+              { backgroundColor },
+              dayData.hasData && !dayData.isToday && styles.clickableDay
             ]}
+            onPress={() => handleDayPress(dayData)}
+            disabled={!dayData.hasData || dayData.isToday}
           >
-            <Text style={styles.dayText}>{day}</Text>
-          </View>
+            {renderDayContent(dayData)}
+          </TouchableOpacity>
         );
       } else {
         days.push(
@@ -112,56 +278,109 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
     return days;
   };
 
-  const calculateMonthlySummary = () => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const daysInMonth = getDaysInMonth(currentDate);
-    
-    let totalCaffeine = 0;
-    let daysWithData = 0;
-    let worstDay = { day: 0, amount: 0 };
-    let streakCount = 0;
-    let currentStreak = 0;
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateKey = formatDateKey(year, month, day);
-      const caffeineLevel = mockCaffeineData[dateKey];
+  // Auto-record daily scores for previous day when new day starts
+  useEffect(() => {
+    const recordYesterdaysScores = async () => {
+      if (!userProfile) return;
       
-      if (caffeineLevel !== undefined) {
-        totalCaffeine += caffeineLevel;
-        daysWithData++;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayKey = yesterday.toISOString().split('T')[0];
+      
+      // Check if we already have scores for yesterday
+      const existingScore = await StorageService.getDayScore(userProfile.userId, yesterdayKey);
+      if (existingScore) return; // Already recorded
+      
+      try {
+        // Get yesterday's drinks
+        const yesterdayDrinks = await StorageService.getDrinksForDate(userProfile.userId, yesterdayKey);
         
-        if (caffeineLevel > worstDay.amount) {
-          worstDay = { day, amount: caffeineLevel };
-        }
-
-        if (caffeineLevel < 400) {
-          currentStreak++;
-        } else {
-          if (currentStreak > streakCount) {
-            streakCount = currentStreak;
+        if (yesterdayDrinks.length === 0) return; // No drinks to calculate scores for
+        
+        // Calculate average scores for the day
+        let totalPeakScore = 0;
+        let totalCrashRisk = 0;
+        let scoreCount = 0;
+        
+        // Sample scores throughout the day (every 2 hours)
+        for (let hour = 8; hour <= 22; hour += 2) {
+          const sampleTime = new Date(yesterday);
+          sampleTime.setHours(hour, 0, 0, 0);
+          
+                     try {
+             // Calculate focus score
+             const focusResult = await FocusScoreService.calculateFocusScore(
+               userProfile,
+               yesterdayDrinks,
+               sampleTime
+             );
+             
+             // Calculate crash risk
+             const crashResult = await CrashRiskService.calculateCrashRisk(
+               userProfile,
+               yesterdayDrinks,
+               sampleTime
+             );
+            
+            totalPeakScore += focusResult.score;
+            totalCrashRisk += crashResult.score;
+            scoreCount++;
+          } catch (error) {
+            console.error('Error calculating scores for sample time:', error);
           }
-          currentStreak = 0;
         }
+        
+        if (scoreCount > 0) {
+          const averagePeakScore = totalPeakScore / scoreCount;
+          const averageCrashRisk = totalCrashRisk / scoreCount;
+          const totalCaffeine = yesterdayDrinks.reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
+          
+          const dayScore: DayScoreRecord = {
+            userId: userProfile.userId,
+            date: yesterdayKey,
+            averagePeakScore,
+            averageCrashRisk,
+            totalCaffeine,
+            createdAt: new Date()
+          };
+          
+          await StorageService.addDayScore(dayScore);
+          console.log('📊 Recorded daily scores for:', yesterdayKey, {
+            averagePeakScore: Math.round(averagePeakScore),
+            averageCrashRisk: Math.round(averageCrashRisk),
+            totalCaffeine
+          });
+          
+          // Reload calendar data to show new scores
+          loadCalendarData();
+        }
+      } catch (error) {
+        console.error('Error recording daily scores:', error);
       }
-    }
-
-    // Update streak count if the month ended with a streak
-    if (currentStreak > streakCount) {
-      streakCount = currentStreak;
-    }
-
-    const averageCaffeine = daysWithData > 0 ? Math.round(totalCaffeine / daysWithData) : 0;
-
-    return {
-      total: totalCaffeine,
-      average: averageCaffeine,
-      worstDay: worstDay.day > 0 ? `${monthNames[month].slice(0, 3)} ${worstDay.day}` : 'None',
-      streakCount
     };
-  };
+    
+    recordYesterdaysScores();
+  }, [userProfile]);
 
-  const summary = calculateMonthlySummary();
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading calendar...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Please complete your profile first</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -169,6 +388,17 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
         <View style={styles.content}>
           {/* Calendar Header */}
           <Text style={styles.title}>jitter calendar</Text>
+          
+          {/* Debug Refresh Button */}
+          <TouchableOpacity 
+            style={styles.debugButton}
+            onPress={() => {
+              console.log('🔄 Manual refresh triggered');
+              loadCalendarData();
+            }}
+          >
+            <Text style={styles.debugButtonText}>Refresh Data</Text>
+          </TouchableOpacity>
           
           {/* Month Navigation */}
           <View style={styles.monthNavigation}>
@@ -202,32 +432,43 @@ export const StatsScreen: React.FC<StatsScreenProps> = () => {
             </View>
           </View>
 
+          {/* Instructions */}
+          <View style={styles.instructionsContainer}>
+            <Text style={styles.instructionsText}>
+              Tap completed days to toggle between peak score and crash risk
+            </Text>
+          </View>
+
           {/* Monthly Summary */}
-          <View style={styles.summarySection}>
-            <Text style={styles.summaryTitle}>monthly jitter summary</Text>
-            
-            <View style={styles.summaryGrid}>
-              <View style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>total caffeine</Text>
-                <Text style={styles.summaryValue}>{summary.total}mg</Text>
-              </View>
+          {summary && (
+            <View style={styles.summarySection}>
+              <Text style={styles.summaryTitle}>monthly jitter summary</Text>
               
-              <View style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>average daily caffeine</Text>
-                <Text style={styles.summaryValue}>{summary.average}mg</Text>
-              </View>
-              
-              <View style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>worst day</Text>
-                <Text style={styles.summaryValue}>{summary.worstDay}</Text>
-              </View>
-              
-              <View style={styles.summaryBox}>
-                <Text style={styles.summaryLabel}>under 400 mg streak</Text>
-                <Text style={styles.summaryValue}>{summary.streakCount} days</Text>
+              <View style={styles.summaryGrid}>
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>total caffeine</Text>
+                  <Text style={styles.summaryValue}>{summary.totalCaffeine}mg</Text>
+                </View>
+                
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>average daily caffeine</Text>
+                  <Text style={styles.summaryValue}>{summary.averageDailyCaffeine}mg</Text>
+                </View>
+                
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>worst day</Text>
+                  <Text style={styles.summaryValue}>
+                    {summary.worstDay ? `${monthNames[summary.month].slice(0, 3)} ${summary.worstDay.day}` : 'None'}
+                  </Text>
+                </View>
+                
+                <View style={styles.summaryBox}>
+                  <Text style={styles.summaryLabel}>under 400 mg streak</Text>
+                  <Text style={styles.summaryValue}>{summary.under400Streak} days</Text>
+                </View>
               </View>
             </View>
-          </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -246,6 +487,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.lg,
     paddingTop: Theme.spacing.lg,
     paddingBottom: Theme.spacing.xl,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
   },
   title: {
     ...Theme.fonts.bigTitle,
@@ -306,17 +556,46 @@ const styles = StyleSheet.create({
     height: dayHeight,
     borderRadius: Theme.borderRadius.small,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: Theme.spacing.xs,
+    justifyContent: 'center',
     marginBottom: Theme.spacing.sm,
+  },
+  clickableDay: {
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   emptyDay: {
     backgroundColor: 'transparent',
+  },
+  dayContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dayText: {
     ...Theme.fonts.body,
     color: Theme.colors.textPrimary,
     fontWeight: '500',
+  },
+  scoreText: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textPrimary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  instructionsContainer: {
+    paddingHorizontal: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+  },
+  instructionsText: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   summarySection: {
     flex: 1,
@@ -324,8 +603,8 @@ const styles = StyleSheet.create({
   summaryTitle: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
-    textAlign: 'center',
     marginBottom: Theme.spacing.lg,
+    textAlign: 'center',
   },
   summaryGrid: {
     flexDirection: 'row',
@@ -338,25 +617,32 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.medium,
     padding: Theme.spacing.md,
     marginBottom: Theme.spacing.md,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: Theme.colors.cardStroke,
   },
   summaryLabel: {
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
-    textAlign: 'center',
     marginBottom: Theme.spacing.xs,
+    textAlign: 'center',
   },
   summaryValue: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
     textAlign: 'center',
+    fontWeight: '700',
+  },
+  debugButton: {
+    backgroundColor: Theme.colors.primaryBlue,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.medium,
+    alignSelf: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  debugButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.white,
+    fontWeight: '600',
   },
 }); 
