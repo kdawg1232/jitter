@@ -79,15 +79,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleContactUs = () => {
-    Linking.openURL('mailto:hello@jitterapp.com');
+    Linking.openURL('https://getjitterapp.com/contact');
   };
 
   const handlePrivacyPolicy = () => {
-    Linking.openURL('https://jitterapp.com/privacy');
+    Linking.openURL('https://getjitterapp.com/privacy');
   };
 
   const handleTermsOfService = () => {
-    Linking.openURL('https://jitterapp.com/terms');
+    Linking.openURL('https://getjitterapp.com/terms');
   };
 
   const SettingRow: React.FC<{
