@@ -76,6 +76,25 @@ export interface RiskCurvePoint {
   caffeineLevel: number;
 }
 
+// Peak Focus Score Types
+export interface FocusFactors {
+  currentLevel: number;     // Current caffeine concentration factor (0-1)
+  risingRate: number;       // How rapidly caffeine is rising (0-1)
+  tolerance: number;        // Caffeine tolerance factor (0-1)
+  focus: number;            // Sleep quality and focus capacity (0-1)
+  absorption: number;       // How much caffeine is still being absorbed (0-1)
+}
+
+export interface FocusResult {
+  score: number;                    // 0-100 peak focus score
+  factors: FocusFactors;            // Component factors
+  personalizedHalfLife: number;     // User's caffeine half-life in hours
+  currentCaffeineLevel: number;     // Current mg in system
+  peakCaffeineLevel: number;        // Recent peak mg level
+  validUntil: Date;                 // When this calculation expires
+  calculatedAt: Date;               // When calculation was performed
+}
+
 // Storage Types
 export interface AppStorage {
   userProfile: UserProfile | null;

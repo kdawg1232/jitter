@@ -17,17 +17,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, CrashRiskResult } from '../types';
-import { StorageService, CrashRiskService, ValidationService } from '../services';
+import { StorageService, CrashRiskService, FocusScoreService, ValidationService } from '../services';
 
 const { width } = Dimensions.get('window');
 
 interface HomeScreenProps {
-  // Add navigation props later if needed
+  onProfileCleared?: () => Promise<void>;
 }
 
 // Using DrinkRecord from types - removed local interface
 
-export const HomeScreen: React.FC<HomeScreenProps> = () => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   // Timer state
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
@@ -44,6 +44,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   // Drinks of the day state
   const [todaysDrinks, setTodaysDrinks] = useState<DrinkRecord[]>([]);
   const [totalDailyCaffeine, setTotalDailyCaffeine] = useState(0);
+  const [last24HoursDrinks, setLast24HoursDrinks] = useState<DrinkRecord[]>([]);
   const [crashRiskScore, setCrashRiskScore] = useState(0);
   
   // New state for crash risk calculation
@@ -51,6 +52,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const [lastNightSleep, setLastNightSleep] = useState<number>(7.5);
   const [crashRiskResult, setCrashRiskResult] = useState<CrashRiskResult | null>(null);
   const [isCalculatingRisk, setIsCalculatingRisk] = useState(false);
+  
+  // Score switching state
+  const [activeScore, setActiveScore] = useState<'crash' | 'focus'>('focus');
+  const [focusScore, setFocusScore] = useState(0); // Peak Focus Score
   
   // Sleep tracking state
   const [showSleepModal, setShowSleepModal] = useState(false);
@@ -60,14 +65,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   
   // Info modal state
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showFocusInfoModal, setShowFocusInfoModal] = useState(false);
   
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
   const customTimeInputRef = useRef<TextInput>(null);
 
+  // Handle score switching
+  const handleScoreSwitch = () => {
+    if (activeScore === 'focus') {
+      setActiveScore('crash');
+      console.log('[HomeScreen] 🔄 Switched to crash risk score');
+    } else {
+      setActiveScore('focus');
+      console.log('[HomeScreen] 🔄 Switched to focus score');
+    }
+  };
+
+  // Handle info modal based on active score
+  const handleInfoPress = () => {
+    if (activeScore === 'focus') {
+      setShowFocusInfoModal(true);
+    } else {
+      setShowInfoModal(true);
+    }
+  };
+
   // Load user data and initialize
   const loadUserData = async () => {
     try {
+      console.log('[HomeScreen] 🚀 Loading user data...');
+      
       // Load user profile
       const profile = await StorageService.getUserProfile();
       setUserProfile(profile);
@@ -76,18 +104,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       if (profile) {
         const sleepData = await StorageService.getLastNightSleep(profile.userId);
         setLastNightSleep(sleepData || 7.5);
+        console.log('[HomeScreen] 😴 Last night sleep loaded:', sleepData || 7.5, 'hours');
       }
       
-      // Load today's drinks
+      // Load today's drinks (for display) and last 24 hours drinks (for crash risk calculation)
       if (profile) {
-        const drinks = await StorageService.getDrinksLast24Hours(profile.userId);
-        setTodaysDrinks(drinks);
-        return drinks;
+        const todaysDrinksData = await StorageService.getDrinksToday(profile.userId);
+        const last24HoursData = await StorageService.getDrinksLast24Hours(profile.userId);
+        setTodaysDrinks(todaysDrinksData);
+        setLast24HoursDrinks(last24HoursData);
+        
+        console.log('[HomeScreen] ☕ Drinks data loaded:', {
+          todaysDrinks: todaysDrinksData.length,
+          last24HoursDrinks: last24HoursData.length,
+          todaysCaffeine: todaysDrinksData.reduce((sum, d) => sum + d.actualCaffeineConsumed, 0),
+          last24hCaffeine: last24HoursData.reduce((sum, d) => sum + d.actualCaffeineConsumed, 0)
+        });
+        
+        return todaysDrinksData;
       }
       
       return [];
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('[HomeScreen] ❌ Error loading user data:', error);
       return [];
     }
   };
@@ -109,50 +148,98 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   // Calculate crash risk score using the real algorithm
   const updateCrashRiskScore = async () => {
     if (!userProfile) {
+      console.log('[HomeScreen] ⚠️ No user profile, setting crash risk to 0');
       setCrashRiskScore(0);
       return;
     }
 
     try {
+      console.log('[HomeScreen] 🎯 Starting crash risk calculation...');
       setIsCalculatingRisk(true);
       
       // Check cache first
       const cachedResult = await StorageService.getCrashRiskCache();
       if (cachedResult) {
+        console.log('[HomeScreen] 💾 Using cached crash risk:', {
+          score: cachedResult.score,
+          cacheValidUntil: cachedResult.validUntil.toISOString(),
+          currentTime: new Date().toISOString()
+        });
         setCrashRiskResult(cachedResult);
         setCrashRiskScore(cachedResult.score);
         setIsCalculatingRisk(false);
         return;
       }
 
-      // Calculate new risk score
-      const result = CrashRiskService.calculateCrashRisk(
+      console.log('[HomeScreen] 🧮 Calculating new crash risk with:', {
+        userId: userProfile.userId,
+        last24hDrinksCount: last24HoursDrinks.length,
+        lastNightSleep,
+        userAge: userProfile.age,
+        userWeight: userProfile.weightKg
+      });
+
+      // Calculate new risk score (sleep data retrieved internally)
+      const result = await CrashRiskService.calculateCrashRisk(
         userProfile,
-        todaysDrinks,
-        lastNightSleep
+        last24HoursDrinks
       );
 
+      console.log('[HomeScreen] ✅ Crash risk calculated:', {
+        score: result.score,
+        currentCaffeineLevel: result.currentCaffeineLevel,
+        peakCaffeineLevel: result.peakCaffeineLevel,
+        factors: result.factors
+      });
+
+      console.log('[HomeScreen] 💥 Setting crash risk score state:', {
+        oldScore: crashRiskScore,
+        newScore: result.score,
+        scoreChanged: crashRiskScore !== result.score
+      });
+      
       setCrashRiskResult(result);
       setCrashRiskScore(result.score);
 
       // Cache the result
       await StorageService.saveCrashRiskCache(result);
     } catch (error) {
-      console.error('Error calculating crash risk:', error);
+      console.error('[HomeScreen] ❌ Error calculating crash risk:', error);
       setCrashRiskScore(0);
     } finally {
       setIsCalculatingRisk(false);
     }
   };
 
+  // Detect daily reset (new day)
+  const detectDailyReset = async () => {
+    const today = new Date().toDateString();
+    const storedDate = await AsyncStorage.getItem('last_active_date');
+    
+    if (storedDate && storedDate !== today) {
+      console.log('[HomeScreen] 🌅 NEW DAY DETECTED! Daily reset occurring:', {
+        previousDate: storedDate,
+        currentDate: today,
+        message: 'Drinks display and daily caffeine progress will reset'
+      });
+    } else if (!storedDate) {
+      console.log('[HomeScreen] 🚀 First app launch today:', today);
+    }
+    
+    await AsyncStorage.setItem('last_active_date', today);
+  };
+
   // Load drinks on component mount
   useEffect(() => {
     const initializeData = async () => {
+      console.log('[HomeScreen] 🚀 App initializing...');
+      await detectDailyReset();
       await migrateLegacyData();
-      const drinks = await loadUserData();
-      const total = calculateTotalCaffeine(drinks);
+      const todaysDrinksData = await loadUserData();
+      const total = calculateTotalCaffeine(todaysDrinksData);
       setTotalDailyCaffeine(total);
       await checkSleepStatus();
+      console.log('[HomeScreen] ✅ App initialization complete');
     };
     
     initializeData();
@@ -160,10 +247,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
 
   // Recalculate crash risk when data changes
   useEffect(() => {
-    if (userProfile && todaysDrinks.length >= 0) {
+    console.log('[HomeScreen] 🔄 Crash risk useEffect triggered:', {
+      hasUserProfile: !!userProfile,
+      last24HoursDrinksCount: last24HoursDrinks.length,
+      lastNightSleep,
+      currentCrashRiskScore: crashRiskScore
+    });
+    
+    if (userProfile && last24HoursDrinks.length >= 0) {
       updateCrashRiskScore();
     }
-  }, [userProfile, todaysDrinks, lastNightSleep]);
+  }, [userProfile, last24HoursDrinks, lastNightSleep]);
 
   // Timer effect
   useEffect(() => {
@@ -201,12 +295,92 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     return customTime !== originalElapsedTimeFormatted ? customTime : originalElapsedTimeFormatted;
   };
 
+  // Calculate real focus score using the algorithm
+  const calculateFocusScore = async () => {
+    if (!userProfile) {
+      console.log('[HomeScreen] ⚠️ No user profile, setting focus score to 0');
+      setFocusScore(0);
+      return;
+    }
+
+    try {
+      console.log('[HomeScreen] 🎯 Calculating focus score...');
+      
+      // Calculate focus score using the real algorithm (sleep data retrieved internally)
+      const result = await FocusScoreService.calculateFocusScore(
+        userProfile,
+        last24HoursDrinks // Use 24-hour drinks for algorithm accuracy
+      );
+
+      console.log('[HomeScreen] ✅ Focus score calculated:', {
+        score: result.score,
+        currentCaffeineLevel: result.currentCaffeineLevel,
+        factors: result.factors
+      });
+
+      console.log('[HomeScreen] 🎯 Setting focus score state:', {
+        oldScore: focusScore,
+        newScore: result.score,
+        scoreChanged: focusScore !== result.score
+      });
+      
+      setFocusScore(result.score);
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error calculating focus score:', error);
+      setFocusScore(0);
+    }
+  };
+
+  // Update focus score when relevant data changes
+  useEffect(() => {
+    console.log('[HomeScreen] 🔄 Focus score useEffect triggered:', {
+      hasUserProfile: !!userProfile,
+      last24HoursDrinksCount: last24HoursDrinks.length,
+      currentFocusScore: focusScore
+    });
+    
+    if (userProfile && last24HoursDrinks.length >= 0) {
+      calculateFocusScore();
+    }
+  }, [userProfile, last24HoursDrinks]); // Sleep data retrieved internally by service
+
+  // Get current score and color based on active view
+  const getCurrentScore = () => {
+    const score = activeScore === 'crash' ? crashRiskScore : focusScore;
+    console.log('[HomeScreen] 📊 getCurrentScore called:', {
+      activeScore,
+      crashRiskScore,
+      focusScore,
+      returnedScore: score
+    });
+    return score;
+  };
+  const getCurrentScoreLabel = () => activeScore === 'crash' ? 'crash risk score' : 'peak focus score';
+  
   // Calculate progress bar fill percentage and color
-  const progressPercentage = Math.min(crashRiskScore, 100);
+  const currentScore = getCurrentScore();
+  const progressPercentage = Math.min(currentScore, 100);
+  
+  console.log('[HomeScreen] 🎨 Rendering with scores:', {
+    activeScore,
+    currentScore,
+    progressPercentage,
+    crashRiskScore,
+    focusScore
+  });
   const getProgressBarColor = () => {
-    if (crashRiskScore >= 75) return Theme.colors.accentRed;
-    if (crashRiskScore >= 50) return Theme.colors.accentOrange;
-    return Theme.colors.primaryGreen;
+    if (activeScore === 'focus') {
+      // Focus score uses four-zone color scheme matching the guide
+      if (currentScore >= 75) return Theme.colors.primaryGreen;   // 75-100: Peak Focus Zone (green)
+      if (currentScore >= 50) return Theme.colors.primaryBlue;    // 50-75: Good Focus Zone (blue)  
+      if (currentScore >= 25) return Theme.colors.accentOrange;   // 25-50: Building Focus Zone (orange)
+      return Theme.colors.accentRed;                              // 0-25: Low Focus Zone (red)
+    } else {
+      // Crash risk uses original colors
+      if (currentScore >= 75) return Theme.colors.accentRed;
+      if (currentScore >= 50) return Theme.colors.accentOrange;
+      return Theme.colors.primaryGreen;
+    }
   };
 
   // Calculate daily caffeine progress bar
@@ -239,6 +413,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     const actualCaffeine = calculateActualCaffeine(caffeineAmountNum, completionPercentage);
     const timeToConsume = getTimeToConsume();
     
+    console.log('[HomeScreen] ☕ User recording new drink:', {
+      name: drinkName || 'Unnamed Drink',
+      caffeineAmount: caffeineAmountNum,
+      completionPercentage,
+      actualCaffeineConsumed: actualCaffeine,
+      timeToConsume,
+      elapsedTime: formatTime(elapsedTime)
+    });
+    
     // Create new drink record
     const now = new Date();
     const newDrink: DrinkRecord = {
@@ -254,25 +437,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     };
     
     // Save drink to storage first
+    console.log('[HomeScreen] 💾 Saving drink to storage...');
     await StorageService.addDrinkRecord(newDrink);
     
     // Clear cache to force recalculation
+    console.log('[HomeScreen] 🗑️ Clearing crash risk cache after new drink');
     await StorageService.clearCrashRiskCache();
     
     // Reload drinks from storage to ensure state consistency
     if (userProfile) {
-      const updatedDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
-      setTodaysDrinks(updatedDrinks);
+      console.log('[HomeScreen] 🔄 Reloading drinks data after new drink...');
+      const updatedTodaysDrinks = await StorageService.getDrinksToday(userProfile.userId);
+      const updatedLast24HoursDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+      setTodaysDrinks(updatedTodaysDrinks);
+      setLast24HoursDrinks(updatedLast24HoursDrinks);
       
-      // Update totals
-      const newTotal = calculateTotalCaffeine(updatedDrinks);
+      // Update totals (using today's drinks for daily total)
+      const newTotal = calculateTotalCaffeine(updatedTodaysDrinks);
+      console.log('[HomeScreen] 📊 Updated daily caffeine total:', newTotal, 'mg');
       setTotalDailyCaffeine(newTotal);
     }
     
-    // Update crash risk score
+    // Update both crash risk and focus scores
+    console.log('[HomeScreen] 🎯 Recalculating crash risk and focus scores...');
     await updateCrashRiskScore();
+    await calculateFocusScore();
     
     // Reset everything
+    console.log('[HomeScreen] 🔄 Resetting form after successful drink recording');
     setTimerStarted(false);
     setShowFollowUp(false);
     setDrinkName('');
@@ -317,12 +509,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const handleSaveSleep = async () => {
     const sleepHours = parseFloat(tempSleepHours);
     
+    console.log('[HomeScreen] 💤 User attempting to save sleep:', {
+      inputValue: tempSleepHours,
+      parsedHours: sleepHours,
+      isValid: !isNaN(sleepHours) && sleepHours >= 0 && sleepHours <= 24
+    });
+    
     if (isNaN(sleepHours) || sleepHours < 0 || sleepHours > 24) {
-      // Could add validation error here
+      console.log('[HomeScreen] ❌ Invalid sleep hours, not saving');
       return;
     }
 
     try {
+      console.log('[HomeScreen] 🔄 Updating sleep from', lastNightSleep, 'to', sleepHours, 'hours');
       setLastNightSleep(sleepHours);
       
       // Save to storage
@@ -336,6 +535,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
           createdAt: new Date(),
         };
         
+        console.log('[HomeScreen] 💾 Saving sleep record for date:', today);
         await StorageService.addSleepRecord(sleepRecord);
         await AsyncStorage.setItem('last_sleep_log_date', today);
         
@@ -343,14 +543,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
         setNeedsSleepUpdate(false);
         
         // Clear crash risk cache to force recalculation
+        console.log('[HomeScreen] 🗑️ Clearing crash risk cache to force recalculation');
         await StorageService.clearCrashRiskCache();
         await updateCrashRiskScore();
+        await calculateFocusScore();
+        
+        console.log('[HomeScreen] ✅ Sleep saved successfully and both scores updated');
       }
       
       setShowSleepModal(false);
       setTempSleepHours('');
     } catch (error) {
-      console.error('Error saving sleep:', error);
+      console.error('[HomeScreen] ❌ Error saving sleep:', error);
     }
   };
 
@@ -479,10 +683,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
             />
           </View>
           
-          {/* Crash Risk Score */}
+          {/* Score Container */}
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreNumber}>
-              {isCalculatingRisk ? '...' : Math.round(crashRiskScore)}
+              {(isCalculatingRisk && activeScore === 'crash') ? '...' : Math.round(currentScore)}
             </Text>
             
             {/* Progress Bar */}
@@ -499,15 +703,60 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
                 />
               </View>
             </View>
+            
+            {/* Score Label and Info */}
             <View style={styles.scoreLabelContainer}>
-              <Text style={styles.scoreLabel}>crash risk score</Text>
-              <TouchableOpacity style={styles.infoButton} onPress={() => setShowInfoModal(true)}>
+              <Text style={styles.scoreLabel}>{getCurrentScoreLabel()}</Text>
+              <TouchableOpacity style={styles.infoButton} onPress={handleInfoPress}>
                 <Text style={styles.infoIcon}>ⓘ</Text>
               </TouchableOpacity>
             </View>
-            {crashRiskScore === 0 && todaysDrinks.length > 0 && (
-              <Text style={styles.hintText}>Score increases as caffeine drops from peak</Text>
+            
+            {/* Score-specific hints (above navigation) */}
+            {activeScore === 'focus' && (
+              <Text style={styles.hintText}>
+                {focusScore === 0 && todaysDrinks.length === 0
+                  ? "Score increases with caffeine intake for optimal focus"
+                  : "Predicts peak productivity in next 30-60 minutes"
+                }
+              </Text>
             )}
+            {activeScore === 'crash' && (
+              <Text style={styles.hintText}>
+                {crashRiskScore === 0 && todaysDrinks.length > 0 
+                  ? "Score increases as caffeine drops from peak levels"
+                  : "Predicts energy crash risk in next 60-90 minutes"
+                }
+              </Text>
+            )}
+            
+            {/* Score Navigation */}
+            <View style={styles.scoreNavigation}>
+              <TouchableOpacity 
+                style={styles.arrowButton} 
+                onPress={handleScoreSwitch}
+              >
+                <Text style={styles.arrowText}>◀</Text>
+              </TouchableOpacity>
+              
+              <View style={styles.scoreIndicators}>
+                <View style={[
+                  styles.indicator, 
+                  activeScore === 'focus' ? styles.activeIndicator : styles.inactiveIndicator
+                ]} />
+                <View style={[
+                  styles.indicator, 
+                  activeScore === 'crash' ? styles.activeIndicator : styles.inactiveIndicator
+                ]} />
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.arrowButton} 
+                onPress={handleScoreSwitch}
+              >
+                <Text style={styles.arrowText}>▶</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           {/* Add Drink Button or Timer Section */}
@@ -523,7 +772,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
               {/* Drinks of the Day Section */}
               {todaysDrinks.length > 0 && (
                 <View style={styles.drinksOfDaySection}>
-                  <Text style={styles.drinksOfDayTitle}>drinks of the day</Text>
+                  <View style={styles.drinksOfDayHeader}>
+                    <Text style={styles.drinksOfDayTitle}>drinks of the day</Text>
+                    <Text style={styles.drinksOfDayDate}>
+                      {new Date().toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric' 
+                      })}
+                    </Text>
+                  </View>
                   {todaysDrinks.map((drink) => (
                     <View key={drink.id} style={styles.drinkItem}>
                       <View style={styles.drinkItemHeader}>
@@ -663,6 +920,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
               </View>
             </View>
           )}
+          
+          {/* Testing Button */}
+          <View style={styles.testingContainer}>
+            <TouchableOpacity 
+              style={styles.testingButton} 
+              onPress={async () => {
+                try {
+                  console.log('[HomeScreen] 🧪 Testing: Starting onboarding flow test...');
+                  await StorageService.clearUserProfile();
+                  console.log('[HomeScreen] ✅ User profile cleared, triggering app re-check...');
+                  // Trigger the app-level profile check to redirect to get started
+                  if (onProfileCleared) {
+                    await onProfileCleared();
+                  }
+                } catch (error) {
+                  console.error('[HomeScreen] ❌ Error testing onboarding flow:', error);
+                }
+              }}
+            >
+              <Text style={styles.testingButtonText}>see onboarding</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </TouchableWithoutFeedback>
 
@@ -707,6 +986,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       </Modal>
 
       {/* Info Modal */}
+      {/* Crash Risk Info Modal */}
       <Modal
         visible={showInfoModal}
         animationType="fade"
@@ -739,6 +1019,100 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
             >
               <Text style={styles.infoCloseButtonText}>Got it</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Peak Focus Info Modal */}
+      <Modal
+        visible={showFocusInfoModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowFocusInfoModal(false)}
+      >
+                <View style={styles.modalOverlay}>
+          <View style={styles.focusModalContent}>
+            <View style={styles.focusModalHeader}>
+              <Text style={styles.modalTitle}>Peak Focus Score Guide</Text>
+            </View>
+            
+            <ScrollView style={styles.focusModalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.infoText}>
+                Predicts your optimal cognitive performance in the next 30-60 minutes.
+              </Text>
+              
+              {/* Score Zones */}
+              <View style={styles.scoreZoneContainer}>
+                <View style={styles.scoreZone}>
+                  <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.primaryGreen }]} />
+                  <View style={styles.scoreZoneText}>
+                    <Text style={styles.scoreRange}>75-100: Peak Focus Zone</Text>
+                    <Text style={styles.scoreDescription}>Maximum focus, alertness, and cognitive performance</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.scoreZone}>
+                  <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.primaryBlue }]} />
+                  <View style={styles.scoreZoneText}>
+                    <Text style={styles.scoreRange}>50-75: Good Focus Zone</Text>
+                    <Text style={styles.scoreDescription}>Strong focus with good performance</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.scoreZone}>
+                  <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.accentOrange }]} />
+                  <View style={styles.scoreZoneText}>
+                    <Text style={styles.scoreRange}>25-50: Building Focus Zone</Text>
+                    <Text style={styles.scoreDescription}>Moderate focus, getting better or declining</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.scoreZone}>
+                  <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.accentRed }]} />
+                  <View style={styles.scoreZoneText}>
+                    <Text style={styles.scoreRange}>0-25: Low Focus Zone</Text>
+                    <Text style={styles.scoreDescription}>Difficulty concentrating, low alertness</Text>
+                  </View>
+                </View>
+              </View>
+              
+              {/* What Score Changes Mean */}
+              <Text style={styles.sectionTitle}>📈 Score Going UP</Text>
+              <Text style={styles.trendDescription}>
+                • Caffeine absorption reaching optimal levels{'\n'}
+                • Building toward peak (100-125% of tolerance){'\n'}
+                • In the 30-60 minute effectiveness window{'\n'}
+                • Expect: Increasing alertness and focus
+              </Text>
+              
+              <Text style={styles.sectionTitle}>📉 Score Going DOWN</Text>
+              <Text style={styles.trendDescription}>
+                • Natural caffeine elimination{'\n'}
+                • Past peak absorption window{'\n'}
+                • Possible overstimulation{'\n'}
+                • Sleep debt reducing focus capacity
+              </Text>
+              
+              {/* Extreme Scores */}
+              <Text style={styles.sectionTitle}>🎯 Perfect Score (100)</Text>
+              <Text style={styles.extremeDescription}>
+                Ideal caffeine level, perfect timing, good sleep, optimal absorption rate
+              </Text>
+              
+              <Text style={styles.sectionTitle}>🚫 Zero Score (0)</Text>
+              <Text style={styles.extremeDescription}>
+                No caffeine, severe overstimulation, very poor sleep, or wrong timing
+              </Text>
+             </ScrollView>
+            
+            <View style={styles.focusModalFooter}>
+              <TouchableOpacity 
+                style={styles.infoCloseButton} 
+                onPress={() => setShowFocusInfoModal(false)}
+              >
+                <Text style={styles.infoCloseButtonText}>Got it</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -806,7 +1180,45 @@ const styles = StyleSheet.create({
     color: Theme.colors.textTertiary,
     fontSize: 10,
     marginTop: Theme.spacing.xs,
+    marginBottom: Theme.spacing.sm,
     textAlign: 'center',
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  // Score navigation container
+  scoreNavigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  // Score switching indicators
+  scoreIndicators: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  indicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: Theme.spacing.xs / 2,
+  },
+  activeIndicator: {
+    backgroundColor: Theme.colors.primaryBlue,
+  },
+  inactiveIndicator: {
+    backgroundColor: Theme.colors.cardBg,
+  },
+  arrowButton: {
+    padding: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.small,
+    backgroundColor: 'transparent',
+  },
+  arrowText: {
+    fontSize: 18,
+    color: Theme.colors.primaryBlue,
+    fontWeight: '600',
   },
   addDrinkSection: {
     alignItems: 'center',
@@ -974,13 +1386,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.md,
     alignItems: 'flex-start', // Left align the entire section
   },
+  drinksOfDayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: Theme.spacing.md,
+  },
   drinksOfDayTitle: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.md,
     textAlign: 'left', // Left align the title
     textTransform: 'lowercase',
-    alignSelf: 'flex-start',
+  },
+  drinksOfDayDate: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textTertiary,
+    textTransform: 'lowercase',
   },
   drinkItem: {
     width: '100%', // Full width to match progress bar
@@ -1198,5 +1620,98 @@ const styles = StyleSheet.create({
   infoCloseButtonText: {
     ...Theme.fonts.button,
     color: 'white',
+  },
+  testingContainer: {
+    marginTop: Theme.spacing.xl,
+    marginBottom: Theme.spacing.lg,
+    alignItems: 'center',
+  },
+  testingButton: {
+    backgroundColor: Theme.colors.accentOrange,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+    opacity: 0.7,
+  },
+  testingButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.white,
+    fontSize: 12,
+  },
+  focusModalContent: {
+    backgroundColor: Theme.colors.canvas,
+    borderRadius: 10,
+    paddingTop: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingBottom: 20,
+    margin: Theme.spacing.lg,
+    maxHeight: '85%',
+    width: '90%',
+    alignSelf: 'center',
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  focusModalHeader: {
+    paddingBottom: Theme.spacing.md,
+  },
+  focusModalScroll: {
+    flex: 1,
+  },
+  focusModalFooter: {
+    paddingTop: Theme.spacing.md,
+  },
+  scoreZoneContainer: {
+    marginVertical: Theme.spacing.md,
+  },
+  scoreZone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  colorIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: Theme.spacing.md,
+  },
+  scoreZoneText: {
+    flex: 1,
+  },
+  scoreRange: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.xs,
+  },
+  scoreDescription: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
+  },
+  sectionTitle: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginTop: Theme.spacing.lg,
+    marginBottom: Theme.spacing.sm,
+  },
+  trendDescription: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: Theme.spacing.sm,
+  },
+  extremeDescription: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    lineHeight: 20,
+    marginBottom: Theme.spacing.sm,
+    fontStyle: 'italic',
+  },
+  algorithmNote: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textTertiary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: Theme.spacing.md,
+    textAlign: 'center',
   },
 }); 

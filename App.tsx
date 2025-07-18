@@ -17,29 +17,33 @@ export default function App() {
     setCurrentScreen('main');
   };
 
+  // Extract profile checking function so it can be called from components
+  const checkUserProfile = async () => {
+    try {
+      const profile = await StorageService.getUserProfile();
+      console.log('🚀 App - checking user profile:', !!profile);
+      
+      if (profile) {
+        console.log('✅ User profile found, routing to main app');
+        setCurrentScreen('main');
+      } else {
+        console.log('❌ No user profile found, showing get started');
+        setCurrentScreen('getStarted');
+      }
+    } catch (error) {
+      console.error('Error checking user profile:', error);
+      setCurrentScreen('getStarted');
+    }
+  };
+
   // Check for existing user profile on app startup
   useEffect(() => {
-    const checkUserProfile = async () => {
-      try {
-        const profile = await StorageService.getUserProfile();
-        console.log('🚀 App startup - checking user profile:', !!profile);
-        
-        if (profile) {
-          console.log('✅ User profile found, routing to main app');
-          setCurrentScreen('main');
-        } else {
-          console.log('❌ No user profile found, showing get started');
-          setCurrentScreen('getStarted');
-        }
-      } catch (error) {
-        console.error('Error checking user profile:', error);
-        setCurrentScreen('getStarted');
-      } finally {
-        setIsLoading(false);
-      }
+    const initializeApp = async () => {
+      await checkUserProfile();
+      setIsLoading(false);
     };
 
-    checkUserProfile();
+    initializeApp();
   }, []);
 
   // Show loading screen while checking user profile
@@ -59,7 +63,7 @@ export default function App() {
       case 'onboarding':
         return <OnboardingContainer onComplete={handleOnboardingComplete} />;
       case 'main':
-        return <MainAppContainer />;
+        return <MainAppContainer onProfileCleared={checkUserProfile} />;
       default:
         return <GetStartedScreen onGetStarted={handleGetStarted} />;
     }

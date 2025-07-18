@@ -23,7 +23,7 @@ export const OnboardingSleepScreen: React.FC<OnboardingSleepScreenProps> = ({
   currentStep,
   totalSteps,
 }) => {
-  const content = ONBOARDING_CONTENT[4];
+  const content = ONBOARDING_CONTENT[5];
   const [sleepInput, setSleepInput] = useState(data.lastNightSleep?.toString() || '');
 
   const handleSleepChange = (text: string) => {
@@ -43,7 +43,7 @@ export const OnboardingSleepScreen: React.FC<OnboardingSleepScreenProps> = ({
   };
 
   const handleNext = () => {
-    if (validateStep[4](data)) {
+    if (validateStep[5](data)) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onNext();
     }
@@ -54,7 +54,7 @@ export const OnboardingSleepScreen: React.FC<OnboardingSleepScreenProps> = ({
     onBack();
   };
 
-  const isValid = validateStep[4](data);
+  const isValid = validateStep[5](data);
 
   return (
     <SafeAreaView style={styles.container}>

@@ -5,26 +5,47 @@ export class StorageService {
   // User Profile Operations
   static async saveUserProfile(profile: UserProfile): Promise<void> {
     try {
+      console.log('[StorageService] Saving user profile:', {
+        userId: profile.userId,
+        age: profile.age,
+        weightKg: profile.weightKg,
+        sex: profile.sex,
+        smoker: profile.smoker,
+        pregnant: profile.pregnant,
+        oralContraceptives: profile.oralContraceptives
+      });
       await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+      console.log('[StorageService] ✅ User profile saved successfully');
     } catch (error) {
-      console.error('Error saving user profile:', error);
+      console.error('[StorageService] ❌ Error saving user profile:', error);
       throw new Error('Failed to save user profile');
     }
   }
 
   static async getUserProfile(): Promise<UserProfile | null> {
     try {
+      console.log('[StorageService] Loading user profile...');
       const profileData = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
-      if (!profileData) return null;
+      if (!profileData) {
+        console.log('[StorageService] ⚠️ No user profile found');
+        return null;
+      }
       
       const profile = JSON.parse(profileData);
       // Convert date strings back to Date objects
       profile.createdAt = new Date(profile.createdAt);
       profile.updatedAt = new Date(profile.updatedAt);
       
+      console.log('[StorageService] ✅ User profile loaded:', {
+        userId: profile.userId,
+        age: profile.age,
+        weightKg: profile.weightKg,
+        createdAt: profile.createdAt.toISOString()
+      });
+      
       return profile;
     } catch (error) {
-      console.error('Error loading user profile:', error);
+      console.error('[StorageService] ❌ Error loading user profile:', error);
       return null;
     }
   }
@@ -47,6 +68,17 @@ export class StorageService {
     } catch (error) {
       console.error('Error updating user profile:', error);
       throw error;
+    }
+  }
+
+  static async clearUserProfile(): Promise<void> {
+    try {
+      console.log('[StorageService] 🗑️ Clearing user profile for testing...');
+      await AsyncStorage.removeItem(STORAGE_KEYS.USER_PROFILE);
+      console.log('[StorageService] ✅ User profile cleared successfully');
+    } catch (error) {
+      console.error('[StorageService] ❌ Error clearing user profile:', error);
+      throw new Error('Failed to clear user profile');
     }
   }
 
@@ -88,6 +120,13 @@ export class StorageService {
 
   static async addSleepRecord(record: SleepRecord): Promise<void> {
     try {
+      console.log('[StorageService] Adding sleep record:', {
+        userId: record.userId,
+        date: record.date,
+        hoursSlept: record.hoursSlept,
+        source: record.source
+      });
+      
       const existingRecords = await this.getSleepRecords();
       
       // Remove any existing record for the same date and user
@@ -95,10 +134,17 @@ export class StorageService {
         existing => !(existing.date === record.date && existing.userId === record.userId)
       );
       
+      const wasReplacement = existingRecords.length !== filteredRecords.length;
+      if (wasReplacement) {
+        console.log('[StorageService] 🔄 Replacing existing sleep record for date:', record.date);
+      }
+      
       filteredRecords.push(record);
       await this.saveSleepRecords(filteredRecords);
+      
+      console.log('[StorageService] ✅ Sleep record saved successfully. Total records:', filteredRecords.length);
     } catch (error) {
-      console.error('Error adding sleep record:', error);
+      console.error('[StorageService] ❌ Error adding sleep record:', error);
       throw error;
     }
   }
@@ -179,11 +225,24 @@ export class StorageService {
 
   static async addDrinkRecord(drink: DrinkRecord): Promise<void> {
     try {
+      console.log('[StorageService] Adding drink record:', {
+        id: drink.id,
+        userId: drink.userId,
+        name: drink.name,
+        caffeineAmount: drink.caffeineAmount,
+        completionPercentage: drink.completionPercentage,
+        actualCaffeineConsumed: drink.actualCaffeineConsumed,
+        timeToConsume: drink.timeToConsume,
+        timestamp: drink.timestamp.toISOString()
+      });
+      
       const existingDrinks = await this.getDrinksHistory();
       existingDrinks.push(drink);
       await this.saveDrinksHistory(existingDrinks);
+      
+      console.log('[StorageService] ✅ Drink record saved successfully. Total drinks:', existingDrinks.length);
     } catch (error) {
-      console.error('Error adding drink record:', error);
+      console.error('[StorageService] ❌ Error adding drink record:', error);
       throw error;
     }
   }
@@ -194,11 +253,46 @@ export class StorageService {
       const twentyFourHoursAgo = new Date();
       twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
       
-      return allDrinks.filter(drink => 
+      const last24HoursDrinks = allDrinks.filter(drink => 
         drink.userId === userId && drink.timestamp >= twentyFourHoursAgo
       );
+      
+      console.log('[StorageService] ⏰ Getting last 24h drinks:', {
+        userId,
+        cutoffTime: twentyFourHoursAgo.toISOString(),
+        totalDrinks: allDrinks.length,
+        last24hDrinks: last24HoursDrinks.length,
+        drinkNames: last24HoursDrinks.map(d => `${d.name} (${d.timestamp.toLocaleTimeString()})`)
+      });
+      
+      return last24HoursDrinks;
     } catch (error) {
-      console.error('Error getting last 24h drinks:', error);
+      console.error('[StorageService] ❌ Error getting last 24h drinks:', error);
+      return [];
+    }
+  }
+
+  static async getDrinksToday(userId: string): Promise<DrinkRecord[]> {
+    try {
+      const allDrinks = await this.getDrinksHistory();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Start of current day (midnight)
+      
+      const todaysDrinks = allDrinks.filter(drink => 
+        drink.userId === userId && drink.timestamp >= today
+      );
+      
+      console.log('[StorageService] 📅 Getting today\'s drinks:', {
+        userId,
+        todayDate: today.toDateString(),
+        totalDrinks: allDrinks.length,
+        todaysDrinks: todaysDrinks.length,
+        drinkNames: todaysDrinks.map(d => d.name)
+      });
+      
+      return todaysDrinks;
+    } catch (error) {
+      console.error('[StorageService] ❌ Error getting today\'s drinks:', error);
       return [];
     }
   }
@@ -226,9 +320,18 @@ export class StorageService {
   // Crash Risk Cache Operations
   static async saveCrashRiskCache(result: CrashRiskResult): Promise<void> {
     try {
+      console.log('[StorageService] 💾 Saving crash risk cache:', {
+        score: result.score,
+        calculatedAt: result.calculatedAt.toISOString(),
+        validUntil: result.validUntil.toISOString(),
+        currentCaffeineLevel: result.currentCaffeineLevel,
+        peakCaffeineLevel: result.peakCaffeineLevel
+      });
+      
       await AsyncStorage.setItem(STORAGE_KEYS.CRASH_RISK_CACHE, JSON.stringify(result));
+      console.log('[StorageService] ✅ Crash risk cache saved successfully');
     } catch (error) {
-      console.error('Error saving crash risk cache:', error);
+      console.error('[StorageService] ❌ Error saving crash risk cache:', error);
       // Don't throw - caching is optional
     }
   }

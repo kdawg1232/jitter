@@ -8,13 +8,17 @@ import {
   SettingsScreen 
 } from '../screens';
 
-export const MainAppContainer: React.FC = () => {
+interface MainAppContainerProps {
+  onProfileCleared: () => Promise<void>;
+}
+
+export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCleared }) => {
   const [activeTab, setActiveTab] = useState<TabType>('home');
 
   const renderCurrentScreen = () => {
     switch (activeTab) {
       case 'home':
-        return <HomeScreen />;
+        return <HomeScreen onProfileCleared={onProfileCleared} />;
       case 'stats':
         return <StatsScreen />;
       case 'winnings':
@@ -22,16 +26,18 @@ export const MainAppContainer: React.FC = () => {
       case 'settings':
         return <SettingsScreen />;
       default:
-        return <HomeScreen />;
+        return <HomeScreen onProfileCleared={onProfileCleared} />;
     }
   };
 
   return (
     <View style={styles.container}>
-      {renderCurrentScreen()}
+      <View style={styles.content}>
+        {renderCurrentScreen()}
+      </View>
       <BottomNavigation 
-        activeTab={activeTab}
-        onTabPress={setActiveTab}
+        activeTab={activeTab} 
+        onTabPress={setActiveTab} 
       />
     </View>
   );
@@ -39,6 +45,9 @@ export const MainAppContainer: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  content: {
     flex: 1,
   },
 }); 

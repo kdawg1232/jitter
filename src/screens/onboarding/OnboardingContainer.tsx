@@ -5,6 +5,7 @@ import { StorageService } from '../../services';
 import { OnboardingWelcomeScreen } from './OnboardingWelcomeScreen';
 import { OnboardingProfileScreen } from './OnboardingProfileScreen';
 import { OnboardingHealthScreen } from './OnboardingHealthScreen';
+import { OnboardingCaffeineScreen } from './OnboardingCaffeineScreen';
 import { OnboardingSleepScreen } from './OnboardingSleepScreen';
 import { OnboardingCompleteScreen } from './OnboardingCompleteScreen';
 
@@ -14,7 +15,7 @@ interface OnboardingContainerProps {
 
 export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComplete }) => {
   const [onboardingData, setOnboardingData] = useState<OnboardingData>(initialOnboardingData);
-  const totalSteps = 5;
+  const totalSteps = 6;
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setOnboardingData(prev => ({ ...prev, ...updates }));
@@ -43,7 +44,7 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
       pregnant: data.pregnant || false,
       oralContraceptives: data.oralContraceptives || false,
       averageSleep7Days: data.lastNightSleep || 7.5,
-      meanDailyCaffeineMg: 0, // Will be calculated from drink history
+      meanDailyCaffeineMg: data.typicalDailyCaffeine || 0, // Use collected tolerance data
       createdAt: now,
       updatedAt: now,
     };
@@ -58,6 +59,8 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
         smoker: onboardingData.smoker,
         pregnant: onboardingData.pregnant,
         oralContraceptives: onboardingData.oralContraceptives,
+        typicalDailyCaffeine: onboardingData.typicalDailyCaffeine,
+        caffeineSource: onboardingData.caffeineSource,
         lastNightSleep: onboardingData.lastNightSleep,
         trackSleepDaily: onboardingData.trackSleepDaily
       });
@@ -120,8 +123,10 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
       case 3:
         return <OnboardingHealthScreen {...commonProps} />;
       case 4:
-        return <OnboardingSleepScreen {...commonProps} />;
+        return <OnboardingCaffeineScreen {...commonProps} />;
       case 5:
+        return <OnboardingSleepScreen {...commonProps} />;
+      case 6:
         return (
           <OnboardingCompleteScreen 
             {...commonProps} 

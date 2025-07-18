@@ -1,149 +1,254 @@
 import { 
   UserProfile, 
   DrinkRecord, 
-  CrashRiskResult, 
-  CrashRiskFactors, 
+  CrashRiskResult,
+  CrashRiskFactors,
   RiskCurvePoint,
   DEFAULT_VALUES 
 } from '../types';
 import { ValidationService } from './ValidationService';
-
-// Enhanced constants for absorption kinetics
-const ABSORPTION_CONSTANTS = {
-  // Caffeine absorption kinetics - peak absorption around 30 minutes
-  PEAK_ABSORPTION_MINUTES: 30,
-  ABSORPTION_WINDOW_MINUTES: 90, // 90% absorbed within 90 minutes
-  MICRO_DOSE_INTERVAL_MINUTES: 1, // Break consumption into 1-minute intervals
-  
-  // Absorption curve parameters (beta distribution approximation)
-  ABSORPTION_CURVE_ALPHA: 2, // Shape parameter for early absorption
-  ABSORPTION_CURVE_BETA: 3,  // Shape parameter for late absorption
-} as const;
+import { StorageService } from './StorageService';
 
 export class CrashRiskService {
   /**
-   * Parse time duration string (HH:MM:SS) to minutes
+   * Enhanced constants for distributed caffeine absorption
    */
-  private static parseTimeToMinutes(timeStr: string): number {
-    try {
-      const parts = timeStr.split(':').map(p => parseInt(p, 10));
-      if (parts.length === 3) {
-        const [hours, minutes, seconds] = parts;
-        return hours * 60 + minutes + seconds / 60;
-      }
-      return 0; // Invalid format defaults to instant consumption
-    } catch {
-      return 0; // Invalid format defaults to instant consumption
+  static readonly ABSORPTION_CONSTANTS = {
+    ONSET_MINUTES: 15,        // When absorption begins
+    PEAK_MINUTES: 45,         // Peak absorption rate
+    DECLINE_MINUTES: 90,      // When absorption rate starts declining
+    COMPLETE_MINUTES: 120,    // When absorption is essentially complete
+    STOMACH_HALF_LIFE: 30,    // How long caffeine stays in stomach (minutes)
+  };
+
+  /**
+   * Calculate absorption rate at a given time point
+   * Uses a realistic curve that peaks around 45 minutes
+   */
+  static calculateAbsorptionRate(minutesSinceConsumption: number): number {
+    const { ONSET_MINUTES, PEAK_MINUTES, DECLINE_MINUTES, COMPLETE_MINUTES } = this.ABSORPTION_CONSTANTS;
+    
+    if (minutesSinceConsumption < ONSET_MINUTES) {
+      // Early phase: slow absorption
+      return (minutesSinceConsumption / ONSET_MINUTES) * 0.3;
+    } else if (minutesSinceConsumption <= PEAK_MINUTES) {
+      // Rising to peak: rapid increase in absorption
+      const progress = (minutesSinceConsumption - ONSET_MINUTES) / (PEAK_MINUTES - ONSET_MINUTES);
+      return 0.3 + (progress * 0.7); // Scale from 0.3 to 1.0
+    } else if (minutesSinceConsumption <= DECLINE_MINUTES) {
+      // Peak plateau: maximum absorption
+      return 1.0;
+    } else if (minutesSinceConsumption <= COMPLETE_MINUTES) {
+      // Decline phase: absorption slows down
+      const progress = (minutesSinceConsumption - DECLINE_MINUTES) / (COMPLETE_MINUTES - DECLINE_MINUTES);
+      return 1.0 - (progress * 0.8); // Scale from 1.0 to 0.2
+    } else {
+      // Late phase: minimal absorption
+      const extraMinutes = minutesSinceConsumption - COMPLETE_MINUTES;
+      return Math.max(0, 0.2 * Math.exp(-extraMinutes / 60)); // Exponential decay
     }
   }
 
   /**
-   * Calculate absorption coefficient at a given time during consumption
-   * Uses a beta distribution approximation to model realistic absorption kinetics
-   * Peak absorption occurs around 30 minutes after consumption starts
+   * Calculate a single drink's contribution to current blood caffeine level
+   * Accounts for distributed absorption over time and elimination
    */
-  private static getAbsorptionRate(
-    minutesFromStart: number, 
-    consumptionDurationMinutes: number
-  ): number {
-    // For very short consumption times, use instant absorption
-    if (consumptionDurationMinutes <= 2) {
-      return minutesFromStart <= consumptionDurationMinutes ? 1.0 : 0.0;
-    }
-
-    // Extend the absorption window beyond consumption time to model gastric emptying
-    const absorptionWindow = Math.max(
-      consumptionDurationMinutes, 
-      ABSORPTION_CONSTANTS.PEAK_ABSORPTION_MINUTES
-    );
-    
-    // If we're past the consumption period, no new absorption
-    if (minutesFromStart > absorptionWindow) {
-      return 0.0;
-    }
-
-    // Normalize time to [0, 1] over the absorption window
-    const t = minutesFromStart / absorptionWindow;
-    
-    // Beta distribution approximation for absorption curve
-    // This creates a curve that starts slow, peaks around 0.3-0.4, then tapers off
-    const { ABSORPTION_CURVE_ALPHA: a, ABSORPTION_CURVE_BETA: b } = ABSORPTION_CONSTANTS;
-    const betaValue = Math.pow(t, a - 1) * Math.pow(1 - t, b - 1);
-    
-    // Normalize so the curve integrates to approximately 1
-    const normalizationFactor = 12; // Empirically determined for our beta parameters
-    
-    return Math.max(0, betaValue * normalizationFactor);
-  }
-
-  /**
-   * Calculate caffeine contribution from a single drink at a specific time
-   * using distributed absorption and exponential elimination
-   */
-  private static calculateDrinkContribution(
+  static calculateDrinkContribution(
     drink: DrinkRecord,
     halfLife: number,
     currentTime: Date
   ): number {
-    const consumptionStartTime = drink.timestamp.getTime();
-    const currentTimeMs = currentTime.getTime();
+    const consumptionStart = drink.timestamp.getTime();
+    const consumptionDurationMs = this.parseTimeToMs(drink.timeToConsume);
+    const now = currentTime.getTime();
     
-    // If current time is before consumption started, no contribution
-    if (currentTimeMs < consumptionStartTime) {
-      return 0;
-    }
-
-    const consumptionDurationMinutes = this.parseTimeToMinutes(drink.timeToConsume);
-    const totalCaffeine = drink.actualCaffeineConsumed;
+    // If drink hasn't started yet, no contribution
+    if (now < consumptionStart) return 0;
     
-    // For instant consumption (duration <= 1 minute), use old method
-    if (consumptionDurationMinutes <= 1) {
-      const hoursElapsed = (currentTimeMs - consumptionStartTime) / (1000 * 60 * 60);
-      return totalCaffeine * Math.pow(2, -hoursElapsed / halfLife);
-    }
-
-    // For distributed consumption, integrate over micro-doses
     let totalContribution = 0;
-    const microDoseCaffeine = totalCaffeine / consumptionDurationMinutes;
+    const intervalMinutes = 5; // Calculate every 5 minutes for precision
+    const totalMinutes = Math.ceil((now - consumptionStart) / (1000 * 60));
     
-    // Process each minute of consumption
-    for (let minute = 0; minute < consumptionDurationMinutes; minute += ABSORPTION_CONSTANTS.MICRO_DOSE_INTERVAL_MINUTES) {
-      const doseTime = consumptionStartTime + (minute * 60 * 1000);
+    for (let minute = 0; minute <= totalMinutes; minute += intervalMinutes) {
+      const timePoint = consumptionStart + (minute * 60 * 1000);
       
-      // Skip if this micro-dose hasn't occurred yet
-      if (currentTimeMs < doseTime) {
-        continue;
+      // Skip if we're beyond current time
+      if (timePoint > now) break;
+      
+      // Check if caffeine was consumed at this time point
+      const minutesFromStart = minute;
+      const consumptionProgress = Math.min(minutesFromStart / (consumptionDurationMs / (1000 * 60)), 1);
+      
+      if (consumptionProgress > 0) {
+        // Amount consumed by this time point
+        const caffeineConsumedByNow = drink.actualCaffeineConsumed * consumptionProgress;
+        const caffeineThisInterval = minute === 0 ? caffeineConsumedByNow : 
+          caffeineConsumedByNow - (drink.actualCaffeineConsumed * Math.min((minute - intervalMinutes) / (consumptionDurationMs / (1000 * 60)), 1));
+        
+        if (caffeineThisInterval > 0) {
+          // Calculate absorption rate at this time point
+          const minutesSinceThisConsumption = (now - timePoint) / (1000 * 60);
+          const absorptionRate = this.calculateAbsorptionRate(minutesSinceThisConsumption);
+          
+          // Calculate elimination since this time point
+          const hoursSinceThisPoint = minutesSinceThisConsumption / 60;
+          const eliminationFactor = Math.pow(2, -hoursSinceThisPoint / halfLife);
+          
+          // Add this interval's contribution
+          totalContribution += caffeineThisInterval * absorptionRate * eliminationFactor;
+        }
       }
-
-      // Calculate how much time has passed since this micro-dose
-      const timeElapsed = currentTimeMs - doseTime;
-      const minutesElapsed = timeElapsed / (1000 * 60);
-      
-      // Get the absorption rate for this point in the consumption
-      const absorptionRate = this.getAbsorptionRate(minute, consumptionDurationMinutes);
-      
-      // Calculate absorbed amount considering absorption kinetics
-      const absorptionDelay = ABSORPTION_CONSTANTS.PEAK_ABSORPTION_MINUTES;
-      let absorbedFraction = 0;
-      
-      if (minutesElapsed > absorptionDelay) {
-        // Full absorption after peak time
-        absorbedFraction = 1.0;
-      } else {
-        // Gradual absorption leading up to peak
-        absorbedFraction = Math.min(1.0, minutesElapsed / absorptionDelay);
-      }
-      
-      const absorbedCaffeine = microDoseCaffeine * absorptionRate * absorbedFraction;
-      
-      // Apply elimination (half-life decay) from when it was absorbed
-      const effectiveElapsedHours = Math.max(0, (minutesElapsed - absorptionDelay)) / 60;
-      const remainingCaffeine = absorbedCaffeine * Math.pow(2, -effectiveElapsedHours / halfLife);
-      
-      totalContribution += remainingCaffeine;
     }
-
+    
     return Math.max(0, totalContribution);
+  }
+
+  /**
+   * Parse time string to milliseconds
+   */
+  static parseTimeToMs(timeString: string): number {
+    const parts = timeString.split(':').map(Number);
+    if (parts.length === 3) {
+      const [hours, minutes, seconds] = parts;
+      return (hours * 3600 + minutes * 60 + seconds) * 1000;
+    }
+    // Fallback for malformed time - assume 15 minutes
+    return 15 * 60 * 1000;
+  }
+
+  /**
+   * Calculate current caffeine level in bloodstream
+   * Uses exponential decay based on half-life
+   */
+  public static calculateCurrentCaffeineLevel(
+    drinks: DrinkRecord[],
+    halfLife: number,
+    currentTime: Date
+  ): number {
+    let totalCaffeine = 0;
+    
+    drinks.forEach(drink => {
+      const hoursElapsed = (currentTime.getTime() - drink.timestamp.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursElapsed >= 0) {
+        const concentration = drink.actualCaffeineConsumed * Math.pow(2, -hoursElapsed / halfLife);
+        totalCaffeine += concentration;
+      }
+    });
+    
+    return totalCaffeine;
+  }
+
+  /**
+   * Calculate peak caffeine level in recent history (6-hour window)
+   * Used to determine the delta for crash risk calculation
+   */
+  public static calculatePeakCaffeineLevel(
+    drinks: DrinkRecord[],
+    halfLife: number,
+    currentTime: Date
+  ): number {
+    const hoursToLookBack = DEFAULT_VALUES.PEAK_DETECTION_WINDOW_HOURS; // 6 hours
+    const intervalMinutes = 5; // Check every 5 minutes for peak
+    
+    let peakLevel = 0;
+    
+    // Check caffeine levels at 5-minute intervals over the past 6 hours
+    for (let i = 0; i <= (hoursToLookBack * 60); i += intervalMinutes) {
+      const checkTime = new Date(currentTime.getTime() - (i * 60 * 1000));
+      const level = this.calculateCurrentCaffeineLevel(drinks, halfLife, checkTime);
+      
+      if (level > peakLevel) {
+        peakLevel = level;
+      }
+    }
+    
+    return peakLevel;
+  }
+
+  /**
+   * Calculate delta factor (relative drop from peak)
+   * Higher delta = greater drop from peak = higher crash risk
+   */
+  static calculateDelta(
+    drinks: DrinkRecord[],
+    halfLife: number,
+    currentTime: Date
+  ): number {
+    const currentLevel = this.calculateCurrentCaffeineLevel(drinks, halfLife, currentTime);
+    const peakLevel = this.calculatePeakCaffeineLevel(drinks, halfLife, currentTime);
+    
+    // Avoid division by zero - if no peak, no crash risk
+    if (peakLevel <= 1e-6) return 0;
+    
+    const delta = Math.max(0, (peakLevel - currentLevel) / peakLevel);
+    
+    console.log('[CrashRiskService] 📉 Delta calculation:', {
+      currentLevel: currentLevel.toFixed(2),
+      peakLevel: peakLevel.toFixed(2),
+      delta: delta.toFixed(3)
+    });
+    
+    return delta;
+  }
+
+  /**
+   * Calculate sleep debt factor
+   * Uses 7-day average if available, otherwise single night
+   */
+  static calculateSleepDebt(
+    lastNightSleep: number,
+    averageSleep7Days: number,
+    hasSevenDaysData: boolean
+  ): number {
+    const idealSleep = DEFAULT_VALUES.BASELINE_SLEEP_HOURS; // 7.5 hours
+    const maxDebt = 3; // Maximum debt hours to consider (caps at 100%)
+    
+    let effectiveSleep = lastNightSleep;
+    
+    // Use 7-day average if we have sufficient data and it's reasonable
+    if (hasSevenDaysData && averageSleep7Days > 0) {
+      effectiveSleep = averageSleep7Days;
+    }
+    
+    const debtHours = Math.max(0, idealSleep - effectiveSleep);
+    const sleepDebt = Math.min(debtHours / maxDebt, 1); // Cap at 100%
+    
+    console.log('[CrashRiskService] 😴 Sleep debt calculation:', {
+      lastNightSleep,
+      averageSleep7Days,
+      hasSevenDaysData,
+      effectiveSleep,
+      idealSleep,
+      debtHours: debtHours.toFixed(2),
+      sleepDebt: sleepDebt.toFixed(3)
+    });
+    
+    return sleepDebt;
+  }
+
+  /**
+   * Calculate circadian factor - time of day affects crash susceptibility
+   */
+  static calculateCircadianFactor(currentTime: Date): number {
+    const hour = currentTime.getHours();
+    
+    // Night: High sensitivity (22:00-06:00)
+    if (hour >= 22 || hour < 6) {
+      return 1.0;
+    }
+    // Morning: Moderate sensitivity (06:00-10:00)  
+    else if (hour >= 6 && hour < 10) {
+      return 0.6;
+    }
+    // Midday: Low sensitivity (10:00-16:00)
+    else if (hour >= 10 && hour < 16) {
+      return 0.4;
+    }
+    // Evening: High sensitivity (16:00-22:00)
+    else {
+      return 0.7;
+    }
   }
 
   /**
@@ -181,118 +286,89 @@ export class CrashRiskService {
   }
 
   /**
-   * Enhanced caffeine level calculation using distributed absorption
+   * Enhanced caffeine tolerance factor calculation using comprehensive user data
    */
-  static calculateCurrentCaffeineLevel(
-    drinks: DrinkRecord[], 
-    halfLife: number, 
-    currentTime: Date = new Date()
+  static calculateTolerance(
+    meanDailyMg: number, 
+    weightKg: number, 
+    userProfile: UserProfile
   ): number {
-    return drinks
-      .filter(drink => drink.timestamp <= currentTime)
-      .reduce((total, drink) => {
-        const contribution = this.calculateDrinkContribution(drink, halfLife, currentTime);
-        return total + contribution;
-      }, 0);
-  }
-
-  /**
-   * Calculate peak caffeine level in the last 6 hours with 5-minute resolution
-   * Now uses enhanced distributed absorption
-   */
-  private static calculatePeakCaffeineLevel(
-    drinks: DrinkRecord[],
-    halfLife: number,
-    currentTime: Date = new Date()
-  ): number {
-    const windowHours = DEFAULT_VALUES.PEAK_DETECTION_WINDOW_HOURS;
-    const intervalMinutes = 5;
-    const totalIntervals = (windowHours * 60) / intervalMinutes;
-    
-    let peakLevel = 0;
-    
-    for (let i = 0; i <= totalIntervals; i++) {
-      const timePoint = new Date(currentTime.getTime() - (i * intervalMinutes * 60 * 1000));
-      const levelAtTime = this.calculateCurrentCaffeineLevel(drinks, halfLife, timePoint);
-      peakLevel = Math.max(peakLevel, levelAtTime);
-    }
-    
-    return peakLevel;
-  }
-
-  /**
-   * Calculate delta (relative drop from peak)
-   */
-  static calculateDelta(
-    drinks: DrinkRecord[],
-    halfLife: number,
-    currentTime: Date = new Date()
-  ): number {
-    const currentLevel = this.calculateCurrentCaffeineLevel(drinks, halfLife, currentTime);
-    const peakLevel = this.calculatePeakCaffeineLevel(drinks, halfLife, currentTime);
-    
-    // Avoid division by zero
-    if (peakLevel <= 1e-6) return 0;
-    
-    const delta = Math.max((peakLevel - currentLevel) / peakLevel, 0);
-    return ValidationService.clampValue(delta, 0, 1);
-  }
-
-  /**
-   * Calculate circadian rhythm factor based on time of day
-   * Caffeine sensitivity varies throughout the day due to circadian rhythms
-   */
-  static calculateCircadianFactor(currentTime: Date = new Date()): number {
-    const hour = currentTime.getHours();
-    
-    // Caffeine sensitivity by time of day (0-1 scale, higher = more sensitive to crash)
-    if (hour >= 22 || hour <= 6) {
-      return 1.0; // Night: Highest sensitivity (22:00-06:00)
-    } else if (hour >= 7 && hour <= 9) {
-      return 0.6; // Morning: Moderate sensitivity (07:00-09:00)
-    } else if (hour >= 10 && hour <= 16) {
-      return 0.4; // Midday: Lowest sensitivity (10:00-16:00)
-    } else if (hour >= 17 && hour <= 21) {
-      return 0.7; // Evening: High sensitivity (17:00-21:00)
-    }
-    
-    return 0.5; // Default fallback
-  }
-
-  /**
-   * Enhanced sleep debt calculation using 7-day average when available
-   * Falls back to single night if insufficient data
-   */
-  static calculateSleepDebt(
-    lastNightSleep: number,
-    averageSleep7Days?: number,
-    hasSevenDaysData: boolean = false
-  ): number {
-    const baseline = DEFAULT_VALUES.BASELINE_SLEEP_HOURS; // 7.5 hours
-    const maxDebt = 3; // Maximum debt hours to consider
-    
-    // Use 7-day average if available and user has 7+ days of data
-    const sleepToUse = (hasSevenDaysData && averageSleep7Days) 
-      ? averageSleep7Days 
-      : lastNightSleep;
-    
-    const sleepDebt = Math.max(baseline - sleepToUse, 0);
-    const normalizedDebt = sleepDebt / maxDebt;
-    
-    return ValidationService.clampValue(normalizedDebt, 0, 1);
-  }
-
-  /**
-   * Calculate caffeine tolerance factor
-   */
-  static calculateTolerance(meanDailyMg: number, weightKg: number): number {
-    const moderateIntakeMgPerKg = DEFAULT_VALUES.MODERATE_CAFFEINE_MG_PER_KG; // 4 mg/kg/day
+    const moderateIntakeMgPerKg = DEFAULT_VALUES.MODERATE_CAFFEINE_MG_PER_KG; // 4 mg/kg/day baseline
     const moderateIntakeTotal = moderateIntakeMgPerKg * weightKg;
     
     if (moderateIntakeTotal <= 0) return 0;
     
-    const tolerance = meanDailyMg / moderateIntakeTotal;
-    return ValidationService.clampValue(tolerance, 0, 1);
+    let baseTolerance = meanDailyMg / moderateIntakeTotal;
+    
+    console.log('[CrashRiskService] 💪 Enhanced tolerance calculation - base:', {
+      meanDailyMg,
+      weightKg,
+      moderateIntakeTotal,
+      baseTolerance: baseTolerance.toFixed(3)
+    });
+    
+    // Health factor adjustments
+    let healthMultiplier = 1.0;
+    
+    // Age factor - tolerance building changes with age
+    if (userProfile.age >= 65) {
+      healthMultiplier *= 0.85; // Slower tolerance development in elderly
+      console.log('[CrashRiskService] 👴 Age factor (65+): 0.85x');
+    } else if (userProfile.age <= 18) {
+      healthMultiplier *= 1.1; // Faster tolerance development in youth
+      console.log('[CrashRiskService] 👶 Age factor (≤18): 1.1x');
+    }
+    
+    // Sex-based differences in tolerance development
+    if (userProfile.sex === 'female') {
+      healthMultiplier *= 0.9; // Generally develop tolerance more slowly
+      console.log('[CrashRiskService] 👩 Sex factor (female): 0.9x');
+    }
+    
+    // Smoking status - significantly affects tolerance
+    if (userProfile.smoker) {
+      healthMultiplier *= 1.6; // Smokers develop much higher tolerance
+      console.log('[CrashRiskService] 🚬 Smoking factor: 1.6x');
+    }
+    
+    // Pregnancy factor - affects tolerance
+    if (userProfile.pregnant) {
+      healthMultiplier *= 0.3; // Pregnancy significantly reduces effective tolerance
+      console.log('[CrashRiskService] 🤱 Pregnancy factor: 0.3x');
+    }
+    
+    // Oral contraceptives factor
+    if (userProfile.sex === 'female' && userProfile.oralContraceptives && !userProfile.pregnant) {
+      healthMultiplier *= 0.8; // Reduced tolerance building capacity
+      console.log('[CrashRiskService] 💊 Oral contraceptives factor: 0.8x');
+    }
+    
+    // Apply health multiplier
+    const adjustedTolerance = baseTolerance * healthMultiplier;
+    
+    // Experience factor based on reported intake patterns
+    let experienceFactor = 1.0;
+    if (meanDailyMg > 400) {
+      experienceFactor = 1.3; // Heavy users have demonstrated tolerance
+      console.log('[CrashRiskService] ☕ Heavy user experience factor: 1.3x');
+    } else if (meanDailyMg < 50) {
+      experienceFactor = 0.6; // Light users have limited tolerance
+      console.log('[CrashRiskService] 🫖 Light user experience factor: 0.6x');
+    }
+    
+    const finalTolerance = adjustedTolerance * experienceFactor;
+    const result = ValidationService.clampValue(finalTolerance, 0, 1);
+    
+    console.log('[CrashRiskService] 💪 Enhanced tolerance calculation complete:', {
+      baseTolerance: baseTolerance.toFixed(3),
+      healthMultiplier: healthMultiplier.toFixed(3),
+      adjustedTolerance: adjustedTolerance.toFixed(3),
+      experienceFactor: experienceFactor.toFixed(3),
+      finalTolerance: finalTolerance.toFixed(3),
+      result: result.toFixed(3)
+    });
+    
+    return result;
   }
 
   /**
@@ -315,8 +391,9 @@ export class CrashRiskService {
   /**
    * Check if user has sufficient sleep data for 7-day average
    */
-  private static hasSevenDaysOfSleepData(profileCreatedAt: Date): boolean {
-    const daysSinceCreation = (new Date().getTime() - profileCreatedAt.getTime()) / (1000 * 60 * 60 * 24);
+  static hasSevenDaysOfSleepData(profileCreatedAt: Date): boolean {
+    const now = new Date();
+    const daysSinceCreation = (now.getTime() - profileCreatedAt.getTime()) / (1000 * 60 * 60 * 24);
     return daysSinceCreation >= 7;
   }
 
@@ -324,26 +401,40 @@ export class CrashRiskService {
    * Enhanced crash risk calculation with age, circadian rhythm, and 7-day sleep average
    * Formula: CrashRisk = 100 × (δ^0.6) × (S^0.4) × ((1-T)^0.3) × M × (C^0.2)
    */
-  static calculateCrashRisk(
+  static async calculateCrashRisk(
     userProfile: UserProfile,
     drinks: DrinkRecord[],
-    lastNightSleep: number,
     currentTime: Date = new Date()
-  ): CrashRiskResult {
+  ): Promise<CrashRiskResult> {
+    console.log('[CrashRiskService] 🧮 Starting crash risk calculation for user:', userProfile.userId);
+    
+    // Retrieve sleep data from storage
+    const lastNightSleep = await StorageService.getLastNightSleep(userProfile.userId);
+    const effectiveSleepHours = lastNightSleep || DEFAULT_VALUES.BASELINE_SLEEP_HOURS;
+    
     // Validate inputs
-    const validation = ValidationService.validateCalculationInputs(userProfile, drinks, lastNightSleep);
+    const validation = ValidationService.validateCalculationInputs(userProfile, drinks, effectiveSleepHours);
     if (!validation.isValid) {
+      console.error('[CrashRiskService] ❌ Validation failed:', validation.errors);
       throw new Error(`Invalid calculation inputs: ${validation.errors.join(', ')}`);
     }
 
     // Calculate personalized half-life (now includes age factor)
     const personalizedHalfLife = this.calculatePersonalizedHalfLife(userProfile);
+    console.log('[CrashRiskService] ⏱️ Personalized half-life:', personalizedHalfLife, 'hours');
 
     // Calculate current caffeine level
     const currentCaffeineLevel = this.calculateCurrentCaffeineLevel(drinks, personalizedHalfLife, currentTime);
     
     // Calculate peak caffeine level
     const peakCaffeineLevel = this.calculatePeakCaffeineLevel(drinks, personalizedHalfLife, currentTime);
+    
+    console.log('[CrashRiskService] ☕ Caffeine levels:', {
+      current: currentCaffeineLevel,
+      peak: peakCaffeineLevel,
+      drinksAnalyzed: drinks.length,
+      effectiveSleepHours
+    });
 
     // Check if user has 7+ days of sleep data
     const hasSevenDaysData = this.hasSevenDaysOfSleepData(userProfile.createdAt);
@@ -351,13 +442,23 @@ export class CrashRiskService {
     // Calculate all factors
     const delta = this.calculateDelta(drinks, personalizedHalfLife, currentTime);
     const sleepDebt = this.calculateSleepDebt(
-      lastNightSleep, 
+      effectiveSleepHours, 
       userProfile.averageSleep7Days, 
       hasSevenDaysData
     );
-    const tolerance = this.calculateTolerance(userProfile.meanDailyCaffeineMg, userProfile.weightKg);
+    const tolerance = this.calculateTolerance(userProfile.meanDailyCaffeineMg, userProfile.weightKg, userProfile);
     const metabolic = this.calculateMetabolicFactor(userProfile);
     const circadian = this.calculateCircadianFactor(currentTime);
+
+    console.log('[CrashRiskService] 📊 Risk factors calculated:', {
+      delta: delta.toFixed(3),
+      sleepDebt: sleepDebt.toFixed(3),
+      tolerance: tolerance.toFixed(3),
+      metabolic: metabolic.toFixed(3),
+      circadian: circadian.toFixed(3),
+      hasSevenDaysData,
+      effectiveSleepHours
+    });
 
     // Apply the enhanced formula with circadian rhythm
     // CrashRisk = 100 × (δ^0.6) × (S^0.4) × ((1-T)^0.3) × M × (C^0.2)
@@ -368,11 +469,19 @@ export class CrashRiskService {
     
     const rawScore = 100 * deltaComponent * sleepComponent * toleranceComponent * metabolic * circadianComponent;
     
+    console.log('[CrashRiskService] 🔢 Score components:', {
+      deltaComponent: deltaComponent.toFixed(3),
+      sleepComponent: sleepComponent.toFixed(3),
+      toleranceComponent: toleranceComponent.toFixed(3),
+      circadianComponent: circadianComponent.toFixed(3),
+      rawScore: rawScore.toFixed(1)
+    });
+    
     // Ensure final score is within bounds
     const finalScore = ValidationService.clampValue(Math.round(rawScore * 10) / 10, 0, 100);
 
-    // Create cache validity (5 minutes from now)
-    const validUntil = new Date(currentTime.getTime() + DEFAULT_VALUES.CACHE_VALIDITY_MINUTES * 60 * 1000);
+    // Create cache validity (expires immediately - recalculate every app open)
+    const validUntil = new Date(currentTime.getTime() + 1000); // 1 second validity for same session only
 
     const factors: CrashRiskFactors = {
       delta,
@@ -381,6 +490,8 @@ export class CrashRiskService {
       metabolic,
       circadian
     };
+
+    console.log('[CrashRiskService] ✅ Final crash risk score:', finalScore, 'Cache valid until:', validUntil.toISOString());
 
     return {
       score: finalScore,
@@ -396,14 +507,13 @@ export class CrashRiskService {
   /**
    * Project crash risk at a future time point
    */
-  static projectFutureRisk(
+  static async projectFutureRisk(
     userProfile: UserProfile,
     drinks: DrinkRecord[],
-    lastNightSleep: number,
     futureTime: Date
-  ): number {
+  ): Promise<number> {
     try {
-      const futureResult = this.calculateCrashRisk(userProfile, drinks, lastNightSleep, futureTime);
+      const futureResult = await this.calculateCrashRisk(userProfile, drinks, futureTime);
       return futureResult.score;
     } catch (error) {
       console.error('Error projecting future risk:', error);
@@ -414,39 +524,26 @@ export class CrashRiskService {
   /**
    * Generate risk curve for the next N hours
    */
-  static generateRiskCurve(
+  static async generateRiskCurve(
     userProfile: UserProfile,
     drinks: DrinkRecord[],
-    lastNightSleep: number,
     hoursAhead: number = 6,
     intervalMinutes: number = 30
-  ): RiskCurvePoint[] {
+  ): Promise<RiskCurvePoint[]> {
     const curve: RiskCurvePoint[] = [];
     const now = new Date();
     const totalIntervals = Math.ceil((hoursAhead * 60) / intervalMinutes);
     const halfLife = this.calculatePersonalizedHalfLife(userProfile);
 
     for (let i = 0; i <= totalIntervals; i++) {
-      const timePoint = new Date(now.getTime() + (i * intervalMinutes * 60 * 1000));
+      const futureTime = new Date(now.getTime() + (i * intervalMinutes * 60 * 1000));
+      const riskScore = await this.projectFutureRisk(userProfile, drinks, futureTime);
       
-      try {
-        const riskScore = this.projectFutureRisk(userProfile, drinks, lastNightSleep, timePoint);
-        const caffeineLevel = this.calculateCurrentCaffeineLevel(drinks, halfLife, timePoint);
-        
-        curve.push({
-          time: timePoint,
-          riskScore,
-          caffeineLevel
-        });
-      } catch (error) {
-        // If calculation fails, use previous value or zero
-        const lastPoint = curve[curve.length - 1];
-        curve.push({
-          time: timePoint,
-          riskScore: lastPoint ? lastPoint.riskScore : 0,
-          caffeineLevel: lastPoint ? lastPoint.caffeineLevel : 0
-        });
-      }
+      curve.push({
+        time: futureTime,
+        riskScore: riskScore,
+        caffeineLevel: this.calculateCurrentCaffeineLevel(drinks, halfLife, futureTime)
+      });
     }
 
     return curve;
@@ -498,40 +595,39 @@ export class CrashRiskService {
   /**
    * Get next recommended caffeine timing (simplified)
    */
-  static getNextCaffeineRecommendation(
+  static async getNextCaffeineRecommendation(
     userProfile: UserProfile,
-    drinks: DrinkRecord[],
-    lastNightSleep: number
-  ): { hoursFromNow: number; reason: string } | null {
+    drinks: DrinkRecord[]
+  ): Promise<{ hoursFromNow: number; reason: string } | null> {
     try {
-      const currentRisk = this.calculateCrashRisk(userProfile, drinks, lastNightSleep);
+      const currentRisk = await this.calculateCrashRisk(userProfile, drinks);
       
       // If current risk is high, recommend immediate caffeine
       if (currentRisk.score > 70) {
         return {
           hoursFromNow: 0,
-          reason: 'High crash risk detected'
+          reason: 'High crash risk detected - caffeine recommended now'
         };
       }
 
       // Generate curve to find when risk will be high
-      const curve = this.generateRiskCurve(userProfile, drinks, lastNightSleep, 8);
+      const curve = await this.generateRiskCurve(userProfile, drinks, 8);
       const highRiskPoint = curve.find(point => point.riskScore > 70);
       
       if (highRiskPoint) {
         const hoursFromNow = (highRiskPoint.time.getTime() - new Date().getTime()) / (1000 * 60 * 60);
-        const recommendedTime = Math.max(hoursFromNow - 0.5, 0); // Suggest 30 min before
-        
         return {
-          hoursFromNow: recommendedTime,
-          reason: 'To prevent upcoming crash'
+          hoursFromNow: Math.max(0, hoursFromNow - 1), // Recommend 1 hour before peak risk
+          reason: 'Preparing for predicted crash risk'
         };
       }
 
       return null; // No recommendation needed
     } catch (error) {
-      console.error('Error getting caffeine recommendation:', error);
+      console.error('Error generating caffeine recommendation:', error);
       return null;
     }
   }
+
+
 } 

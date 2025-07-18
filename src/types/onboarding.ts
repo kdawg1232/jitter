@@ -12,7 +12,11 @@ export interface OnboardingData {
   pregnant: boolean | null;
   oralContraceptives: boolean | null;
   
-  // Sleep Setup (Screen 4)
+  // Caffeine Tolerance (Screen 4)
+  typicalDailyCaffeine: number | null; // mg per day
+  caffeineSource: 'coffee' | 'tea' | 'energy_drinks' | 'soda' | 'mixed' | null;
+  
+  // Sleep Setup (Screen 5)
   lastNightSleep: number | null;
   trackSleepDaily: boolean;
   
@@ -38,6 +42,8 @@ export const initialOnboardingData: OnboardingData = {
   smoker: null,
   pregnant: null,
   oralContraceptives: null,
+  typicalDailyCaffeine: null,
+  caffeineSource: null,
   lastNightSleep: null,
   trackSleepDaily: true,
   currentStep: 1,
@@ -69,12 +75,19 @@ export const validateStep = {
   },
   
   4: (data: OnboardingData): boolean => {
+    return data.typicalDailyCaffeine !== null && 
+           data.typicalDailyCaffeine >= 0 && 
+           data.typicalDailyCaffeine <= 1000 &&
+           data.caffeineSource !== null;
+  },
+  
+  5: (data: OnboardingData): boolean => {
     return data.lastNightSleep !== null && 
            data.lastNightSleep >= 0 && 
            data.lastNightSleep <= 16;
   },
   
-  5: (data: OnboardingData): boolean => true, // Completion screen - no validation needed
+  6: (data: OnboardingData): boolean => true, // Completion screen - no validation needed
 };
 
 // Weight conversion utilities
@@ -101,13 +114,18 @@ export const ONBOARDING_CONTENT = {
     description: 'These significantly impact how quickly you process caffeine'
   },
   4: {
+    title: 'caffeine tolerance',
+    subtitle: 'your typical caffeine consumption',
+    description: 'This helps us understand your personal tolerance level'
+  },
+  5: {
     title: 'sleep tracking',
     subtitle: 'sleep affects crash severity',
     description: "We'll ask this each day for better predictions"
   },
-  5: {
+  6: {
     title: "you're all set!",
-    subtitle: 'your personalized crash predictions are ready',
-    description: 'Start tracking your caffeine to see real-time crash risk scores'
+    subtitle: 'your personalized caffeine insights are ready',
+    description: 'Start tracking your caffeine to see real-time crash risk and peak focus scores'
   }
 }; 

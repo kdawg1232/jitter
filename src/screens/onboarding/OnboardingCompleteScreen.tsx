@@ -22,7 +22,7 @@ export const OnboardingCompleteScreen: React.FC<OnboardingCompleteScreenProps> =
   totalSteps,
   onComplete,
 }) => {
-  const content = ONBOARDING_CONTENT[5];
+  const content = ONBOARDING_CONTENT[6];
 
   const handleComplete = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
