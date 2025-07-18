@@ -11,10 +11,20 @@ import { OnboardingCompleteScreen } from './OnboardingCompleteScreen';
 
 interface OnboardingContainerProps {
   onComplete: () => void;
+  initialData?: OnboardingData;
+  isEditMode?: boolean;
+  existingUserId?: string;
 }
 
-export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComplete }) => {
-  const [onboardingData, setOnboardingData] = useState<OnboardingData>(initialOnboardingData);
+export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ 
+  onComplete, 
+  initialData, 
+  isEditMode = false,
+  existingUserId 
+}) => {
+  const [onboardingData, setOnboardingData] = useState<OnboardingData>(
+    initialData || initialOnboardingData
+  );
   const totalSteps = 6;
 
   const updateData = (updates: Partial<OnboardingData>) => {
@@ -36,7 +46,7 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
   const convertOnboardingToUserProfile = (data: OnboardingData): UserProfile => {
     const now = new Date();
     return {
-      userId: 'user_' + now.getTime(), // Simple ID generation
+      userId: existingUserId || 'user_' + now.getTime(), // Use existing ID in edit mode
       weightKg: data.weightKg!,
       age: data.age!,
       sex: data.sex!,
@@ -45,14 +55,14 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
       oralContraceptives: data.oralContraceptives || false,
       averageSleep7Days: data.lastNightSleep || 7.5,
       meanDailyCaffeineMg: data.typicalDailyCaffeine || 0, // Use collected tolerance data
-      createdAt: now,
+      createdAt: now, // Will be updated properly in handleComplete for edit mode
       updatedAt: now,
     };
   };
 
   const handleComplete = async () => {
     try {
-      console.log('🎯 Completing onboarding with data:', {
+      console.log(`🎯 ${isEditMode ? 'Updating' : 'Completing'} onboarding with data:`, {
         weightKg: onboardingData.weightKg,
         age: onboardingData.age,
         sex: onboardingData.sex,
@@ -65,19 +75,36 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
         trackSleepDaily: onboardingData.trackSleepDaily
       });
 
-      // Convert onboarding data to user profile
-      const userProfile = convertOnboardingToUserProfile(onboardingData);
-      console.log('👤 Created user profile:', userProfile);
-      
-      // Save user profile using StorageService
-      await StorageService.saveUserProfile(userProfile);
-      console.log('✅ User profile saved successfully');
+      if (isEditMode && existingUserId) {
+        // In edit mode, update existing profile
+        const profileUpdates = {
+          weightKg: onboardingData.weightKg!,
+          age: onboardingData.age!,
+          sex: onboardingData.sex!,
+          smoker: onboardingData.smoker!,
+          pregnant: onboardingData.pregnant || false,
+          oralContraceptives: onboardingData.oralContraceptives || false,
+          averageSleep7Days: onboardingData.lastNightSleep || 7.5,
+          meanDailyCaffeineMg: onboardingData.typicalDailyCaffeine || 0,
+        };
+        
+        await StorageService.updateUserProfile(profileUpdates);
+        console.log('✅ User profile updated successfully');
+      } else {
+        // In new user mode, create new profile
+        const userProfile = convertOnboardingToUserProfile(onboardingData);
+        console.log('👤 Created user profile:', userProfile);
+        
+        await StorageService.saveUserProfile(userProfile);
+        console.log('✅ User profile saved successfully');
+      }
       
       // Initialize sleep records if tracking is enabled
       if (onboardingData.trackSleepDaily && onboardingData.lastNightSleep) {
+        const userId = existingUserId || 'user_' + new Date().getTime();
         const today = new Date().toISOString().split('T')[0];
         const sleepRecord = {
-          userId: userProfile.userId,
+          userId: userId,
           date: today,
           hoursSlept: onboardingData.lastNightSleep,
           source: 'manual' as const,
@@ -96,7 +123,7 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({ onComp
       updateData({ isComplete: true });
       
       // Call the completion callback
-      console.log('🚀 Calling completion callback - routing to main app');
+      console.log(`🚀 ${isEditMode ? 'Profile updated' : 'Onboarding complete'} - calling completion callback`);
       onComplete();
     } catch (error) {
       console.error('❌ Error saving onboarding data:', error);
