@@ -1,0 +1,252 @@
+/* jitter website styles */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Rounded', system-ui, sans-serif;
+    background: #F3ECFF;
+    color: #333;
+    line-height: 1.6;
+    font-weight: 400;
+}
+
+.container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 0 24px;
+}
+
+/* header */
+.header {
+    padding: 60px 0 40px;
+    text-align: center;
+}
+
+.app-title {
+    font-weight: 800;
+    font-size: 64px;
+    color: #5F70FF;
+    text-transform: lowercase;
+    margin: 0;
+    letter-spacing: -2px;
+}
+
+/* main content */
+.main {
+    text-align: center;
+    flex: 1;
+    padding: 40px 0;
+}
+
+.tagline {
+    font-size: 48px;
+    font-weight: 800;
+    color: #333;
+    margin-bottom: 16px;
+    text-transform: lowercase;
+}
+
+.subtitle {
+    font-size: 18px;
+    color: #6E6A7F;
+    margin-bottom: 60px;
+    text-transform: lowercase;
+}
+
+
+
+/* features */
+.features {
+    margin-bottom: 80px;
+}
+
+.features h3 {
+    font-size: 32px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #333;
+    text-transform: lowercase;
+}
+
+.features-subtitle {
+    color: #6E6A7F;
+    font-size: 16px;
+    margin-bottom: 60px;
+    text-transform: lowercase;
+}
+
+.feature-grid {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 80px;
+    flex-wrap: wrap;
+}
+
+.feature-box {
+    text-align: center;
+    padding: 40px 30px;
+    background: #FFFFFF;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(95, 112, 255, 0.12);
+    transition: all 0.3s ease;
+    min-width: 200px;
+    max-width: 250px;
+    flex: 1;
+}
+
+.feature-box:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 16px 48px rgba(95, 112, 255, 0.2);
+}
+
+.feature-icon {
+    font-size: 60px;
+    margin-bottom: 20px;
+    display: block;
+}
+
+.feature-box h4 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #333;
+    text-transform: lowercase;
+}
+
+.feature-box p {
+    color: #6E6A7F;
+    font-size: 14px;
+    line-height: 1.4;
+    text-transform: lowercase;
+}
+
+/* cta */
+.cta {
+    margin-bottom: 80px;
+}
+
+.cta h3 {
+    font-size: 32px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: #333;
+    text-transform: lowercase;
+}
+
+.cta p {
+    font-size: 16px;
+    color: #6E6A7F;
+    margin-bottom: 40px;
+    text-transform: lowercase;
+}
+
+.download-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.btn-download {
+    display: block;
+    transition: transform 0.2s ease;
+}
+
+.btn-download:hover {
+    transform: translateY(-2px);
+}
+
+.btn-download img {
+    height: 60px;
+    width: auto;
+}
+
+.app-store img {
+    height: 60px;
+}
+
+.google-play img {
+    height: 60px;
+    width: 180px;
+    object-fit: contain;
+}
+
+/* footer */
+.footer {
+    margin-top: auto;
+    padding: 40px 0;
+    text-align: center;
+}
+
+.footer-nav {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 20px;
+}
+
+.footer-nav a {
+    color: #6E6A7F;
+    text-decoration: none;
+    font-size: 16px;
+    text-transform: lowercase;
+    transition: color 0.2s ease;
+}
+
+.footer-nav a:hover {
+    color: #5F70FF;
+}
+
+.footer-copyright {
+    color: #B3B0C5;
+    font-size: 14px;
+    text-transform: lowercase;
+}
+
+/* responsive design */
+@media (max-width: 768px) {
+    .app-title {
+        font-size: 48px;
+    }
+    
+    .tagline {
+        font-size: 36px;
+    }
+    
+    .subtitle {
+        font-size: 16px;
+    }
+    
+
+    
+    .feature-grid {
+        flex-direction: column;
+        align-items: center;
+        gap: 30px;
+    }
+    
+    .feature-box {
+        max-width: 300px;
+    }
+    
+    .footer-nav {
+        gap: 20px;
+    }
+    
+    .btn-download img {
+        height: 50px;
+    }
+    
+    .google-play img {
+        width: 150px;
+    }
+} 
