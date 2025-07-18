@@ -11,7 +11,9 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
   Keyboard,
+  Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, CrashRiskResult } from '../types';
@@ -49,6 +51,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
   const [lastNightSleep, setLastNightSleep] = useState<number>(7.5);
   const [crashRiskResult, setCrashRiskResult] = useState<CrashRiskResult | null>(null);
   const [isCalculatingRisk, setIsCalculatingRisk] = useState(false);
+  
+  // Sleep tracking state
+  const [showSleepModal, setShowSleepModal] = useState(false);
+  const [tempSleepHours, setTempSleepHours] = useState('');
+  const [needsSleepUpdate, setNeedsSleepUpdate] = useState(false);
+  const [lastSleepLogDate, setLastSleepLogDate] = useState<string | null>(null);
+  
+  // Info modal state
+  const [showInfoModal, setShowInfoModal] = useState(false);
   
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
@@ -141,6 +152,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
       const drinks = await loadUserData();
       const total = calculateTotalCaffeine(drinks);
       setTotalDailyCaffeine(total);
+      await checkSleepStatus();
     };
     
     initializeData();
@@ -275,6 +287,73 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
     Keyboard.dismiss();
   };
 
+  // Check if today's sleep has been logged
+  const checkSleepStatus = async () => {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    try {
+      // Check if sleep was logged today
+      const lastLogDate = await AsyncStorage.getItem('last_sleep_log_date');
+      setLastSleepLogDate(lastLogDate);
+      
+      if (lastLogDate !== today) {
+        setNeedsSleepUpdate(true);
+      } else {
+        setNeedsSleepUpdate(false);
+      }
+    } catch (error) {
+      console.error('Error checking sleep status:', error);
+      setNeedsSleepUpdate(true); // Default to needing update on error
+    }
+  };
+
+  // Handle sleep button press
+  const handleSleepPress = () => {
+    setTempSleepHours(lastNightSleep.toString());
+    setShowSleepModal(true);
+  };
+
+  // Save sleep hours
+  const handleSaveSleep = async () => {
+    const sleepHours = parseFloat(tempSleepHours);
+    
+    if (isNaN(sleepHours) || sleepHours < 0 || sleepHours > 24) {
+      // Could add validation error here
+      return;
+    }
+
+    try {
+      setLastNightSleep(sleepHours);
+      
+      // Save to storage
+      if (userProfile) {
+        const today = new Date().toISOString().split('T')[0];
+        const sleepRecord = {
+          userId: userProfile.userId,
+          date: today,
+          hoursSlept: sleepHours,
+          source: 'manual' as const,
+          createdAt: new Date(),
+        };
+        
+        await StorageService.addSleepRecord(sleepRecord);
+        await AsyncStorage.setItem('last_sleep_log_date', today);
+        
+        setLastSleepLogDate(today);
+        setNeedsSleepUpdate(false);
+        
+        // Clear crash risk cache to force recalculation
+        await StorageService.clearCrashRiskCache();
+        await updateCrashRiskScore();
+      }
+      
+      setShowSleepModal(false);
+      setTempSleepHours('');
+    } catch (error) {
+      console.error('Error saving sleep:', error);
+    }
+  };
+
   // Calculate dynamic width for drink name input
   const getDrinkNameInputWidth = () => {
     const minWidth = 120;
@@ -367,8 +446,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <Text style={styles.title}>jitter</Text>
+          {/* Header with Sleep Button */}
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={[
+                styles.sleepButton,
+                needsSleepUpdate && styles.sleepButtonAlert
+              ]} 
+              onPress={handleSleepPress}
+            >
+              <Text style={styles.sleepEmoji}>🌙</Text>
+              <View style={styles.sleepTextContainer}>
+                <Text style={[
+                  styles.sleepText,
+                  needsSleepUpdate && styles.sleepTextAlert
+                ]}>
+                  add sleep
+                  {needsSleepUpdate && <Text style={styles.alertIcon}> !</Text>}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <Text style={styles.title}>jitter</Text>
+            <View style={styles.headerSpacer} />
+          </View>
           
           {/* Mascot */}
           <View style={styles.mascotContainer}>
@@ -399,7 +499,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
                 />
               </View>
             </View>
-            <Text style={styles.scoreLabel}>crash risk score</Text>
+            <View style={styles.scoreLabelContainer}>
+              <Text style={styles.scoreLabel}>crash risk score</Text>
+              <TouchableOpacity style={styles.infoButton} onPress={() => setShowInfoModal(true)}>
+                <Text style={styles.infoIcon}>ⓘ</Text>
+              </TouchableOpacity>
+            </View>
             {crashRiskScore === 0 && todaysDrinks.length > 0 && (
               <Text style={styles.hintText}>Score increases as caffeine drops from peak</Text>
             )}
@@ -560,6 +665,83 @@ export const HomeScreen: React.FC<HomeScreenProps> = () => {
           )}
         </ScrollView>
       </TouchableWithoutFeedback>
+
+      {/* Sleep Modal */}
+      <Modal
+        visible={showSleepModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowSleepModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Sleep</Text>
+            <Text style={styles.modalSubtitle}>How many hours did you sleep last night?</Text>
+            
+            <TextInput
+              style={styles.sleepInput}
+              value={tempSleepHours}
+              onChangeText={setTempSleepHours}
+              placeholder="7.5"
+              keyboardType="numeric"
+              autoFocus={true}
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => setShowSleepModal(false)}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalButtonSave} 
+                onPress={handleSaveSleep}
+              >
+                <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Info Modal */}
+      <Modal
+        visible={showInfoModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>How Crash Risk Works</Text>
+            
+            <Text style={styles.infoText}>
+              Your crash risk score predicts caffeine crashes in the next 60-90 minutes based on:
+            </Text>
+            
+            <Text style={styles.infoFactors}>
+              • Your caffeine intake timing and amount{'\n'}
+              • Personal factors (age, weight, lifestyle){'\n'}
+              • Sleep quality and patterns{'\n'}
+              • Time of day and circadian rhythms{'\n'}
+              • Your individual caffeine tolerance
+            </Text>
+            
+            <Text style={styles.infoFooter}>
+              The score becomes more accurate as you use the app consistently.
+            </Text>
+            
+            <TouchableOpacity 
+              style={styles.infoCloseButton} 
+              onPress={() => setShowInfoModal(false)}
+            >
+              <Text style={styles.infoCloseButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -855,5 +1037,166 @@ const styles = StyleSheet.create({
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
     textAlign: 'left',
+  },
+  
+  // Header styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: Theme.spacing.lg,
+  },
+  headerSpacer: {
+    width: 80, // Same width as sleep button for centering
+  },
+  
+  // Sleep button styles
+  sleepButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.sm,
+    width: 80,
+    minHeight: 60,
+  },
+  sleepButtonAlert: {
+    backgroundColor: '#FFE6E6', // Light red background
+  },
+  sleepEmoji: {
+    fontSize: 24,
+    marginBottom: 2,
+  },
+  sleepTextContainer: {
+    alignItems: 'center',
+  },
+  sleepText: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  sleepTextAlert: {
+    color: '#D32F2F', // Red text
+    fontWeight: '600',
+  },
+  alertIcon: {
+    color: '#D32F2F', // Red exclamation mark
+    fontWeight: 'bold',
+  },
+  
+  // Score label with info icon
+  scoreLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoButton: {
+    marginLeft: Theme.spacing.xs,
+    padding: 2,
+  },
+  infoIcon: {
+    fontSize: 14,
+    color: Theme.colors.textTertiary,
+  },
+  
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: Theme.colors.canvas,
+    borderRadius: 16,
+    padding: Theme.spacing.xl,
+    margin: Theme.spacing.lg,
+    width: width - (Theme.spacing.lg * 2),
+    maxWidth: 340,
+  },
+  modalTitle: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  modalSubtitle: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  
+  // Sleep input styles
+  sleepInput: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+    color: Theme.colors.textPrimary,
+  },
+  
+  // Modal buttons
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Theme.spacing.md,
+  },
+  modalButtonCancel: {
+    flex: 1,
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+  },
+  modalButtonSave: {
+    flex: 1,
+    backgroundColor: Theme.colors.primaryBlue,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+  },
+  modalButtonTextCancel: {
+    ...Theme.fonts.button,
+    color: Theme.colors.textSecondary,
+  },
+  modalButtonTextSave: {
+    ...Theme.fonts.button,
+    color: 'white',
+  },
+  
+  // Info modal styles
+  infoText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    marginBottom: Theme.spacing.md,
+    lineHeight: 22,
+  },
+  infoFactors: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.lg,
+    lineHeight: 24,
+  },
+  infoFooter: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textTertiary,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  infoCloseButton: {
+    backgroundColor: Theme.colors.primaryBlue,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+  },
+  infoCloseButtonText: {
+    ...Theme.fonts.button,
+    color: 'white',
   },
 }); 
