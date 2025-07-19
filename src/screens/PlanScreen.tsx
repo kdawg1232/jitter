@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -51,6 +51,9 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
   const [newSessionImportance, setNewSessionImportance] = useState<1 | 2 | 3>(2);
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
+  // Scroll ref for auto-scrolling to time picker
+  const scrollViewRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -302,9 +305,9 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
 
   const formatTime = (date: Date): string => {
     return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+      hour: 'numeric', 
       minute: '2-digit',
-      hour12: false 
+      hour12: true 
     });
   };
 
@@ -323,6 +326,7 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
         scrollEnabled={!showBedtimePicker && !showStartTimePicker && !showEndTimePicker}
@@ -388,18 +392,9 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>focus sessions</Text>
           
-          {focusSessions.length === 0 ? (
-            <View style={styles.centeredSection}>
-              <TouchableOpacity 
-                style={styles.circularAddButton}
-                onPress={() => setShowAddSession(true)}
-              >
-                <Text style={styles.addButtonIcon}>+</Text>
-              </TouchableOpacity>
-              <Text style={styles.addLabel}>add sessions</Text>
-            </View>
-          ) : (
+          {!showAddSession ? (
             <>
+              {/* Show existing sessions first */}
               {focusSessions.map((session) => (
                 <View key={session.id} style={styles.sessionCard}>
                   <View style={styles.sessionHeader}>
@@ -421,6 +416,7 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
                 </View>
               ))}
               
+              {/* Add session button */}
               <View style={styles.centeredSection}>
                 <TouchableOpacity 
                   style={[styles.circularAddButton, { backgroundColor: Theme.colors.primaryBlue }]}
@@ -428,11 +424,154 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
                 >
                   <Text style={styles.addButtonIcon}>+</Text>
                 </TouchableOpacity>
-                <Text style={styles.addLabel}>add another session</Text>
+                <Text style={styles.addLabel}>
+                  {focusSessions.length === 0 ? 'add sessions' : 'add another session'}
+                </Text>
               </View>
             </>
-          )}
+          ) : (
+            /* Add session form - inline like home screen */
+            <View style={styles.addSessionSection}>
+              {/* Session name input */}
+              <View style={styles.sessionNameSection}>
+                <TextInput
+                  style={styles.sessionNameInput}
+                  placeholder="Session name"
+                  value={newSessionName}
+                  onChangeText={setNewSessionName}
+                />
+                <Text style={styles.sessionNameLabel}>enter session name</Text>
+              </View>
 
+              {/* Time selection - clickable like target bedtime */}
+              {!showStartTimePicker && !showEndTimePicker ? (
+                <View style={styles.timeSelectionSection}>
+                  <View style={styles.timeButtonsRow}>
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setShowStartTimePicker(true);
+                        setShowEndTimePicker(false);
+                        // Auto-scroll to show time picker and buttons in center of view
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 400, animated: true });
+                        }, 300);
+                      }}
+                      style={styles.timeButton}
+                    >
+                      <Text style={styles.timeButtonText}>{newSessionStart}</Text>
+                      <Text style={styles.timeButtonLabel}>start time</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setShowEndTimePicker(true);
+                        setShowStartTimePicker(false);
+                        // Auto-scroll to show time picker and buttons in center of view
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollTo({ y: 400, animated: true });
+                        }, 300);
+                      }}
+                      style={styles.timeButton}
+                    >
+                      <Text style={styles.timeButtonText}>{newSessionEnd}</Text>
+                      <Text style={styles.timeButtonLabel}>end time</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                /* Time picker section - centered below like target bedtime */
+                <View style={styles.timePickerSection}>
+                  <Text style={styles.timePickerTitle}>
+                    {showStartTimePicker ? newSessionStart : newSessionEnd}
+                  </Text>
+                  <TimePicker
+                    value={showStartTimePicker ? newSessionStart : newSessionEnd}
+                    onChange={showStartTimePicker ? setNewSessionStart : setNewSessionEnd}
+                    style={{ marginVertical: Theme.spacing.lg }}
+                  />
+                  <View style={styles.pickerButtons}>
+                    <TouchableOpacity
+                      style={styles.circularButton}
+                      onPress={() => {
+                        // Reset to saved times on cancel
+                        if (showStartTimePicker) {
+                          setNewSessionStart('09:00 AM');
+                        } else {
+                          setNewSessionEnd('11:00 AM');
+                        }
+                        setShowStartTimePicker(false);
+                        setShowEndTimePicker(false);
+                      }}
+                    >
+                      <Text style={styles.circularButtonText}>×</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.circularButton, styles.circularButtonSave]}
+                      onPress={() => {
+                        setShowStartTimePicker(false);
+                        setShowEndTimePicker(false);
+                      }}
+                    >
+                      <Text style={[styles.circularButtonText, { color: Theme.colors.white }]}>✓</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Importance selection - only show when not picking time */}
+              {!showStartTimePicker && !showEndTimePicker && (
+                <View style={styles.importanceSection}>
+                  <Text style={styles.importanceLabel}>Importance</Text>
+                  <View style={styles.importanceButtons}>
+                    {[1, 2, 3].map((importance) => (
+                      <TouchableOpacity
+                        key={importance}
+                        style={[
+                          styles.importanceButton,
+                          newSessionImportance === importance && styles.importanceButtonActive
+                        ]}
+                        onPress={() => setNewSessionImportance(importance as 1 | 2 | 3)}
+                      >
+                        <Text style={[
+                          styles.importanceButtonText,
+                          newSessionImportance === importance && styles.importanceButtonTextActive
+                        ]}>
+                          {importance === 1 ? 'Normal' : importance === 2 ? 'Important' : 'Critical'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Action buttons - circular X and checkmark like target bedtime */}
+              {!showStartTimePicker && !showEndTimePicker && (
+                <View style={styles.sessionActionButtons}>
+                  <TouchableOpacity
+                    style={styles.circularButton}
+                    onPress={() => {
+                      // Reset form and hide
+                      setNewSessionName('');
+                      setNewSessionStart('09:00 AM');
+                      setNewSessionEnd('11:00 AM');
+                      setNewSessionImportance(2);
+                      setShowStartTimePicker(false);
+                      setShowEndTimePicker(false);
+                      setShowAddSession(false);
+                    }}
+                  >
+                    <Text style={styles.circularButtonText}>×</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.circularButton, styles.circularButtonSave]}
+                    onPress={addFocusSession}
+                  >
+                    <Text style={[styles.circularButtonText, { color: Theme.colors.white }]}>✓</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Caffeine Plan */}
@@ -509,103 +648,6 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
           </View>
         )}
       </ScrollView>
-
-
-
-      {/* Add Session Modal */}
-      {showAddSession && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Focus Session</Text>
-            
-            <View style={styles.sessionNameSection}>
-              <TextInput
-                style={styles.sessionNameInput}
-                placeholder="Session name"
-                value={newSessionName}
-                onChangeText={setNewSessionName}
-              />
-              <Text style={styles.sessionNameLabel}>enter session name</Text>
-            </View>
-            
-            <View style={styles.timeInputsSection}>
-              <View style={styles.timeInputRow}>
-                <TouchableOpacity 
-                  style={styles.timeInputBox}
-                  onPress={() => {
-                    setShowStartTimePicker(true);
-                    setShowEndTimePicker(false);
-                  }}
-                >
-                  <Text style={styles.timeInputText}>{newSessionStart}</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={styles.timeInputBox}
-                  onPress={() => {
-                    setShowEndTimePicker(true);
-                    setShowStartTimePicker(false);
-                  }}
-                >
-                  <Text style={styles.timeInputText}>{newSessionEnd}</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.timeInputLabels}>
-                <Text style={styles.timeInputLabel}>start time</Text>
-                <Text style={styles.timeInputLabel}>end time</Text>
-              </View>
-              
-              {(showStartTimePicker || showEndTimePicker) && (
-                <View style={styles.inlineTimePickerContainer}>
-                  <TimePicker
-                    value={showStartTimePicker ? newSessionStart : newSessionEnd}
-                    onChange={showStartTimePicker ? setNewSessionStart : setNewSessionEnd}
-                  />
-                </View>
-              )}
-            </View>
-
-            <View style={styles.importanceRow}>
-              <Text style={styles.modalLabel}>Importance</Text>
-              <View style={styles.importanceButtons}>
-                {[1, 2, 3].map((importance) => (
-                  <TouchableOpacity
-                    key={importance}
-                    style={[
-                      styles.importanceButton,
-                      newSessionImportance === importance && styles.importanceButtonActive
-                    ]}
-                    onPress={() => setNewSessionImportance(importance as 1 | 2 | 3)}
-                  >
-                    <Text style={[
-                      styles.importanceButtonText,
-                      newSessionImportance === importance && styles.importanceButtonTextActive
-                    ]}>
-                      {importance === 1 ? 'Normal' : importance === 2 ? 'Important' : 'Critical'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setShowAddSession(false)}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalAddButton}
-                onPress={addFocusSession}
-              >
-                <Text style={styles.modalAddText}>Add Session</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
     </SafeAreaView>
   );
 };
@@ -974,57 +1016,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Modal styles
-  modalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: Theme.colors.white,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    width: width - (Theme.spacing.lg * 2),
-    maxWidth: 400,
-    maxHeight: '85%',
-  },
-  modalTitle: {
-    ...Theme.fonts.sectionHeading,
-    color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.md,
-    textAlign: 'center',
-  },
-  modalInput: {
-    ...Theme.fonts.body,
-    backgroundColor: Theme.colors.cardBg,
-    borderRadius: Theme.borderRadius.small,
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.sm,
-    marginBottom: Theme.spacing.md,
-    borderWidth: 1,
-    borderColor: Theme.colors.divider,
-  },
-  modalTimeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Theme.spacing.md,
-  },
-  modalTimeInput: {
-    flex: 0.45,
-  },
-  modalLabel: {
-    ...Theme.fonts.caption,
-    color: Theme.colors.textSecondary,
-    marginBottom: Theme.spacing.xs,
-  },
-  importanceRow: {
-    marginBottom: Theme.spacing.lg,
-  },
+
+
   importanceButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1050,48 +1043,22 @@ const styles = StyleSheet.create({
     color: Theme.colors.white,
     fontWeight: '600',
   },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalCancelButton: {
-    flex: 0.45,
-    backgroundColor: Theme.colors.cardBg,
-    borderRadius: Theme.borderRadius.small,
-    paddingVertical: Theme.spacing.sm,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Theme.colors.divider,
-  },
-  modalCancelText: {
-    ...Theme.fonts.button,
-    color: Theme.colors.textSecondary,
-  },
-  modalAddButton: {
-    flex: 0.45,
-    backgroundColor: Theme.colors.primaryGreen,
-    borderRadius: Theme.borderRadius.small,
-    paddingVertical: Theme.spacing.sm,
-    alignItems: 'center',
-  },
-  modalAddText: {
-    ...Theme.fonts.button,
-    color: Theme.colors.white,
-  },
-  // Session modal styles
+
+  // Session form styles
   sessionNameSection: {
     marginBottom: Theme.spacing.lg,
+    alignItems: 'center',
   },
   sessionNameInput: {
     ...Theme.fonts.body,
-    backgroundColor: Theme.colors.white,
-    borderRadius: Theme.borderRadius.small,
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: Theme.borderRadius.large,
     paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
     marginBottom: Theme.spacing.xs,
-    borderWidth: 1,
-    borderColor: Theme.colors.divider,
     fontSize: 16,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
   },
   sessionNameLabel: {
     ...Theme.fonts.caption,
@@ -1111,44 +1078,58 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.sm,
     fontSize: 16,
   },
-  // Time input styles for modal
-  timeInputsSection: {
-    marginBottom: Theme.spacing.lg,
-  },
-  timeInputRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Theme.spacing.xs,
-  },
-  timeInputBox: {
-    flex: 0.45,
-    backgroundColor: Theme.colors.white,
-    borderRadius: Theme.borderRadius.small,
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: Theme.colors.divider,
+
+  addSessionSection: {
+    paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
   },
-  timeInputText: {
-    ...Theme.fonts.body,
-    color: Theme.colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '500',
+  timeSelectionSection: {
+    marginBottom: Theme.spacing.lg,
+    alignItems: 'center',
   },
-  timeInputLabels: {
+  timeButtonsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    width: '100%',
     marginBottom: Theme.spacing.md,
   },
-  timeInputLabel: {
-    ...Theme.fonts.caption,
-    color: Theme.colors.textSecondary,
-    flex: 0.45,
+  timeButton: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.sm,
+  },
+  timeButtonText: {
+    ...Theme.fonts.bigTitle,
+    color: Theme.colors.primaryBlue,
     textAlign: 'center',
   },
-  inlineTimePickerContainer: {
-    alignItems: 'center',
-    marginTop: Theme.spacing.md,
+  timeButtonLabel: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
   },
+  timePickerSection: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+  },
+  timePickerTitle: {
+    ...Theme.fonts.bigTitle,
+    color: Theme.colors.primaryBlue,
+    marginBottom: Theme.spacing.md,
+    textAlign: 'center',
+  },
+  importanceSection: {
+    marginBottom: Theme.spacing.lg,
+    alignItems: 'center',
+  },
+  importanceLabel: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    marginBottom: Theme.spacing.xs,
+  },
+     sessionActionButtons: {
+     flexDirection: 'row',
+     justifyContent: 'center',
+     gap: Theme.spacing.md,
+     marginTop: Theme.spacing.lg,
+   },
 }); 
