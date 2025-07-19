@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, CrashRiskResult, FocusResult } from '../types';
-import { StorageService, CrashRiskService, CaffScoreService, ValidationService, WidgetService, DeepLinkService } from '../services';
+import { StorageService, CrashRiskService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -536,12 +536,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     await updateCrashRiskScore();
     await calculateCaffScore();
     
-    // Update widget data with new scores
+        // Update widget data with new scores
     if (userProfile) {
       console.log('[HomeScreen] 📱 Updating widget data after drink logging...');
       await WidgetService.updateWidgetData(userProfile.userId);
+      
+      // React to drink logged for planning system
+      console.log('[HomeScreen] 📅 Updating planning system after drink logging...');
+      await PlanningService.reactToDrinkLogged(userProfile.userId, newDrink);
     }
-    
+
     // Reset everything
     console.log('[HomeScreen] 🔄 Resetting form after successful drink recording');
     setTimerStarted(false);

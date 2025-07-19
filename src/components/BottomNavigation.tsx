@@ -11,7 +11,7 @@ import { Theme } from '../theme/colors';
 
 const { width } = Dimensions.get('window');
 
-export type TabType = 'home' | 'stats' | 'winnings' | 'settings';
+export type TabType = 'home' | 'stats' | 'planning' | 'winnings' | 'settings';
 
 interface BottomNavigationProps {
   activeTab: TabType;
@@ -25,6 +25,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   const tabs: { key: TabType; label: string; icon: string }[] = [
     { key: 'home', label: 'home', icon: '🏠' },
     { key: 'stats', label: 'stats', icon: '📊' },
+    { key: 'planning', label: 'planning', icon: '📅' },
     { key: 'winnings', label: 'winnings', icon: '🏆' },
     { key: 'settings', label: 'settings', icon: '⚙️' },
   ];

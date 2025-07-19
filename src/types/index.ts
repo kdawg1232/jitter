@@ -109,7 +109,10 @@ export const STORAGE_KEYS = {
   DRINKS_HISTORY: 'jitter_drinks_history',
   CRASH_RISK_CACHE: 'jitter_crash_risk_cache',
   DAY_SCORES: 'jitter_day_scores',
-  STREAK_DATA: 'jitter_streak_data'
+  STREAK_DATA: 'jitter_streak_data',
+  FOCUS_SESSIONS: 'jitter_focus_sessions',
+  CAFFEINE_PLANS: 'jitter_caffeine_plans',
+  PLANNING_PREFERENCES: 'jitter_planning_preferences'
 } as const;
 
 // Validation Types
@@ -224,3 +227,70 @@ export interface StreakData {
 
 // Re-export onboarding types for convenience
 export * from './onboarding'; 
+
+// Planning Types
+export interface FocusSession {
+  id: string;
+  userId: string;
+  name: string;                        // e.g., "Morning deep work", "Client meeting"
+  startTime: Date;                     // When the session starts
+  endTime: Date;                       // When the session ends
+  importance: 1 | 2 | 3;              // 1=normal, 2=important, 3=critical
+  isRecurring: boolean;               // If this repeats daily
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CaffeineRecommendation {
+  id: string;
+  sessionId: string;                   // Which focus session this supports
+  recommendedTime: Date;               // When to consume caffeine
+  doseMg: number;                      // Recommended dose in mg
+  reasoning: string;                   // Why this timing/dose
+  sippingWindowMinutes: number;        // How long to spend drinking it
+  confidence: number;                  // 0-1 confidence in recommendation
+  status: 'pending' | 'consumed' | 'skipped' | 'adjusted';
+  actualDrinkId?: string;              // Links to actual DrinkRecord if consumed
+}
+
+export interface CaffeinePlan {
+  id: string;
+  userId: string;
+  planDate: string;                    // YYYY-MM-DD
+  bedtime: Date;                       // User's intended bedtime
+  sessions: FocusSession[];            // Planned focus sessions
+  recommendations: CaffeineRecommendation[]; // Generated caffeine recommendations
+  latestSafeCaffeineTime: Date;       // Latest time for caffeine to not disrupt sleep
+  totalPlannedCaffeine: number;       // Sum of all recommendations
+  generatedAt: Date;
+  lastUpdatedAt: Date;
+}
+
+export interface PlanningPreferences {
+  userId: string;
+  maxSessionsPerDay: number;           // Limit on focus sessions (1-3)
+  preferredDoseMgMin: number;          // User's minimum preferred dose
+  preferredDoseMgMax: number;          // User's maximum preferred dose
+  caffeineSensitivityOverride?: number; // 0-1 override for sensitivity
+  sleepBufferHours: number;            // Hours before bedtime to stop caffeine
+  enableSmartAdjustments: boolean;     // Allow system to modify plan based on actual intake
+  notificationsEnabled: boolean;       // Send caffeine timing notifications
+  targetBedtime: string;               // Target bedtime in "HH:MM AM/PM" format
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CaffeineCurvePoint {
+  time: Date;
+  caffeineLevel: number;               // mg in bloodstream
+  projectedLevel: number;              // Projected level (for future planning)
+  zone: 'low' | 'building' | 'peak' | 'stable' | 'declining' | 'crash';
+}
+
+export interface PlanningResult {
+  plan: CaffeinePlan;
+  caffeineCurve: CaffeineCurvePoint[]; // 24-hour curve with recommendations
+  warnings: string[];                  // Issues with the plan
+  suggestions: string[];               // Optimization suggestions
+  conflictResolutions: string[];       // How conflicts were resolved
+} 

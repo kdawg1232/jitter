@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, DrinkRecord, SleepRecord, CrashRiskResult, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, STORAGE_KEYS } from '../types';
+import { UserProfile, DrinkRecord, SleepRecord, CrashRiskResult, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, FocusSession, CaffeinePlan, PlanningPreferences, STORAGE_KEYS } from '../types';
 
 export class StorageService {
   // User Profile Operations
@@ -811,6 +811,185 @@ export class StorageService {
     }
   }
 
+  // Planning Operations
+  static async saveFocusSessions(sessions: FocusSession[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.FOCUS_SESSIONS, JSON.stringify(sessions));
+    } catch (error) {
+      console.error('Error saving focus sessions:', error);
+      throw new Error('Failed to save focus sessions');
+    }
+  }
+
+  static async getFocusSessions(): Promise<FocusSession[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.FOCUS_SESSIONS);
+      if (!data) return [];
+      
+      const sessions = JSON.parse(data);
+      return sessions.map((session: any) => ({
+        ...session,
+        startTime: new Date(session.startTime),
+        endTime: new Date(session.endTime),
+        createdAt: new Date(session.createdAt),
+        updatedAt: new Date(session.updatedAt)
+      }));
+    } catch (error) {
+      console.error('Error loading focus sessions:', error);
+      return [];
+    }
+  }
+
+  static async getFocusSessionsForUser(userId: string): Promise<FocusSession[]> {
+    try {
+      const allSessions = await this.getFocusSessions();
+      return allSessions.filter(session => session.userId === userId);
+    } catch (error) {
+      console.error('Error loading user focus sessions:', error);
+      return [];
+    }
+  }
+
+  static async saveCaffeinePlans(plans: CaffeinePlan[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.CAFFEINE_PLANS, JSON.stringify(plans));
+    } catch (error) {
+      console.error('Error saving caffeine plans:', error);
+      throw new Error('Failed to save caffeine plans');
+    }
+  }
+
+  static async getCaffeinePlans(): Promise<CaffeinePlan[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.CAFFEINE_PLANS);
+      if (!data) return [];
+      
+      const plans = JSON.parse(data);
+      return plans.map((plan: any) => ({
+        ...plan,
+        bedtime: new Date(plan.bedtime),
+        sessions: plan.sessions.map((session: any) => ({
+          ...session,
+          startTime: new Date(session.startTime),
+          endTime: new Date(session.endTime),
+          createdAt: new Date(session.createdAt),
+          updatedAt: new Date(session.updatedAt)
+        })),
+        recommendations: plan.recommendations.map((rec: any) => ({
+          ...rec,
+          recommendedTime: new Date(rec.recommendedTime)
+        })),
+        latestSafeCaffeineTime: new Date(plan.latestSafeCaffeineTime),
+        generatedAt: new Date(plan.generatedAt),
+        lastUpdatedAt: new Date(plan.lastUpdatedAt)
+      }));
+    } catch (error) {
+      console.error('Error loading caffeine plans:', error);
+      return [];
+    }
+  }
+
+  static async getTodaysPlan(userId: string): Promise<CaffeinePlan | null> {
+    try {
+      const allPlans = await this.getCaffeinePlans();
+      const today = new Date().toISOString().split('T')[0];
+      
+      return allPlans.find(plan => 
+        plan.userId === userId && plan.planDate === today
+      ) || null;
+    } catch (error) {
+      console.error('Error loading today\'s plan:', error);
+      return null;
+    }
+  }
+
+  static async savePlanningPreferences(preferences: PlanningPreferences): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.PLANNING_PREFERENCES, JSON.stringify(preferences));
+    } catch (error) {
+      console.error('Error saving planning preferences:', error);
+      throw new Error('Failed to save planning preferences');
+    }
+  }
+
+  static async getPlanningPreferences(): Promise<PlanningPreferences | null> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.PLANNING_PREFERENCES);
+      if (!data) return null;
+      
+      const preferences = JSON.parse(data);
+      return {
+        ...preferences,
+        createdAt: new Date(preferences.createdAt),
+        updatedAt: new Date(preferences.updatedAt)
+      };
+    } catch (error) {
+      console.error('Error loading planning preferences:', error);
+      return null;
+    }
+  }
+
+  static async addFocusSession(session: FocusSession): Promise<void> {
+    try {
+      const sessions = await this.getFocusSessions();
+      sessions.push(session);
+      await this.saveFocusSessions(sessions);
+    } catch (error) {
+      console.error('Error adding focus session:', error);
+      throw error;
+    }
+  }
+
+  static async updateFocusSession(sessionId: string, updates: Partial<FocusSession>): Promise<void> {
+    try {
+      const sessions = await this.getFocusSessions();
+      const index = sessions.findIndex(s => s.id === sessionId);
+      
+      if (index === -1) {
+        throw new Error('Focus session not found');
+      }
+      
+      sessions[index] = {
+        ...sessions[index],
+        ...updates,
+        updatedAt: new Date()
+      };
+      
+      await this.saveFocusSessions(sessions);
+    } catch (error) {
+      console.error('Error updating focus session:', error);
+      throw error;
+    }
+  }
+
+  static async deleteFocusSession(sessionId: string): Promise<void> {
+    try {
+      const sessions = await this.getFocusSessions();
+      const filteredSessions = sessions.filter(s => s.id !== sessionId);
+      await this.saveFocusSessions(filteredSessions);
+    } catch (error) {
+      console.error('Error deleting focus session:', error);
+      throw error;
+    }
+  }
+
+  static async saveCaffeinePlan(plan: CaffeinePlan): Promise<void> {
+    try {
+      const plans = await this.getCaffeinePlans();
+      
+      // Remove any existing plan for the same user and date
+      const filteredPlans = plans.filter(p => 
+        !(p.userId === plan.userId && p.planDate === plan.planDate)
+      );
+      
+      filteredPlans.push(plan);
+      await this.saveCaffeinePlans(filteredPlans);
+    } catch (error) {
+      console.error('Error saving caffeine plan:', error);
+      throw error;
+    }
+  }
+
   // Utility Operations
   static async clearAllData(): Promise<void> {
     try {
@@ -820,7 +999,10 @@ export class StorageService {
         AsyncStorage.removeItem(STORAGE_KEYS.DRINKS_HISTORY),
         AsyncStorage.removeItem(STORAGE_KEYS.CRASH_RISK_CACHE),
         AsyncStorage.removeItem(STORAGE_KEYS.DAY_SCORES),
-        AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA)
+        AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA),
+        AsyncStorage.removeItem(STORAGE_KEYS.FOCUS_SESSIONS),
+        AsyncStorage.removeItem(STORAGE_KEYS.CAFFEINE_PLANS),
+        AsyncStorage.removeItem(STORAGE_KEYS.PLANNING_PREFERENCES)
       ]);
     } catch (error) {
       console.error('Error clearing all data:', error);

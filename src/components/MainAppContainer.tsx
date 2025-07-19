@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { BottomNavigation, TabType } from './BottomNavigation';
-import { 
-  HomeScreen, 
-  StatsScreen, 
-  WinningsScreen, 
-  SettingsScreen,
-  EditInputScreen,
-  HelpSupportScreen
-} from '../screens';
+import { HomeScreen } from '../screens/HomeScreen';
+import { StatsScreen } from '../screens/StatsScreen';
+import { PlanScreen } from '../screens/PlanScreen';
+import { WinningsScreen } from '../screens/WinningsScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { EditInputScreen } from '../screens/EditInputScreen';
+import { HelpSupportScreen } from '../screens/HelpSupportScreen';
 import { OnboardingContainer } from '../screens/onboarding';
 import { OnboardingData } from '../types/onboarding';
 import { StorageService } from '../services';
@@ -134,6 +133,8 @@ export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCle
         return <HomeScreen onProfileCleared={onProfileCleared} />;
       case 'stats':
         return <StatsScreen refreshTrigger={statsRefreshTrigger} />;
+      case 'planning':
+        return <PlanScreen />;
       case 'winnings':
         return <WinningsScreen />;
       case 'settings':
