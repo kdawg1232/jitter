@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GetStartedScreen } from './src/screens';
 import { MainAppContainer } from './src/components';
 import { OnboardingContainer } from './src/screens/onboarding';
-import { StorageService } from './src/services';
+import { StorageService, DeepLinkService } from './src/services';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'getStarted' | 'onboarding' | 'main'>('getStarted');
@@ -40,6 +40,10 @@ export default function App() {
   useEffect(() => {
     const initializeApp = async () => {
       await checkUserProfile();
+      
+      // Initialize deep linking for widget integration
+      await DeepLinkService.initialize();
+      
       setIsLoading(false);
     };
 

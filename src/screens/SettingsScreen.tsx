@@ -11,7 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { Theme } from '../theme/colors';
-import { StorageService } from '../services/StorageService';
+import { StorageService, WidgetService } from '../services';
 import { UserProfile } from '../types';
 
 interface SettingsScreenProps {
@@ -53,12 +53,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
-  const handleWidgetSetup = () => {
-    Alert.alert(
-      'Widget Setup',
-      'Widget setup functionality coming soon!',
-      [{ text: 'OK' }]
-    );
+  const handleWidgetSetup = async () => {
+    try {
+      console.log('[SettingsScreen] 📱 Starting widget setup...');
+      
+      if (!userProfile) {
+        Alert.alert(
+          'Setup Required',
+          'Please complete your profile setup before configuring widgets.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Update widget data to ensure it's current
+      await WidgetService.updateWidgetData(userProfile.userId);
+      
+      // Check if widget data is available
+      const widgetData = await WidgetService.getWidgetData();
+      
+      if (widgetData) {
+        Alert.alert(
+          'Widget Setup',
+          `Your Jitter widget is ready! 🎉\n\nCurrent data:\n• Crash Risk: ${widgetData.crashRiskScore}\n• Focus Score: ${widgetData.focusScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
+          [{ text: 'Got it!' }]
+        );
+      } else {
+        Alert.alert(
+          'Widget Setup',
+          'Unable to prepare widget data. Please log some drinks first and try again.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[SettingsScreen] ❌ Error setting up widget:', error);
+      Alert.alert(
+        'Setup Error',
+        'There was an error setting up your widget. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleHelpSupport = () => {

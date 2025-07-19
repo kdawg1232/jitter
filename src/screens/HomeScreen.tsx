@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, CrashRiskResult } from '../types';
-import { StorageService, CrashRiskService, FocusScoreService, ValidationService } from '../services';
+import { StorageService, CrashRiskService, FocusScoreService, ValidationService, WidgetService, DeepLinkService } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -239,6 +239,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       const total = calculateTotalCaffeine(todaysDrinksData);
       setTotalDailyCaffeine(total);
       await checkSleepStatus();
+      
+      // Check for widget pre-fill data
+      await checkWidgetPreFill();
+      
       console.log('[HomeScreen] ✅ App initialization complete');
     };
     
@@ -463,6 +467,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     await updateCrashRiskScore();
     await calculateFocusScore();
     
+    // Update widget data with new scores
+    if (userProfile) {
+      console.log('[HomeScreen] 📱 Updating widget data after drink logging...');
+      await WidgetService.updateWidgetData(userProfile.userId);
+    }
+    
     // Reset everything
     console.log('[HomeScreen] 🔄 Resetting form after successful drink recording');
     setTimerStarted(false);
@@ -548,6 +558,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         await updateCrashRiskScore();
         await calculateFocusScore();
         
+        // Update widget data with new scores
+        console.log('[HomeScreen] 📱 Updating widget data after sleep update...');
+        await WidgetService.updateWidgetData(userProfile.userId);
+        
         console.log('[HomeScreen] ✅ Sleep saved successfully and both scores updated');
       }
       
@@ -555,6 +569,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       setTempSleepHours('');
     } catch (error) {
       console.error('[HomeScreen] ❌ Error saving sleep:', error);
+    }
+  };
+
+  // Check for widget pre-fill data and automatically start follow-up
+  const checkWidgetPreFill = async () => {
+    try {
+      const preFillData = await DeepLinkService.getWidgetPreFillData();
+      
+      if (preFillData) {
+        console.log('[HomeScreen] 📱 Widget pre-fill data found:', preFillData);
+        
+        // Auto-populate the follow-up form with widget data
+        setTimerStarted(true);
+        setShowFollowUp(true);
+        setCustomTime(preFillData.timeToConsume);
+        setElapsedTime(preFillData.elapsedSeconds);
+        
+        // Set drink name to indicate it came from widget
+        setDrinkName('Widget Drink');
+        
+        console.log('[HomeScreen] ✅ Pre-filled form with widget data');
+      }
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error checking widget pre-fill:', error);
     }
   };
 
