@@ -1,13 +1,13 @@
 import { StorageService } from './StorageService';
 import { CrashRiskService } from './CrashRiskService';
-import { FocusScoreService } from './FocusScoreService';
+import { CaffScoreService } from './CaffScoreService';
 import { UserProfile, DrinkRecord } from '../types';
 import JitterWidgetBridge from '../native/JitterWidgetBridge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface WidgetData {
   crashRiskScore: number;
-  focusScore: number;
+  caffScore: number;
   currentCaffeineLevel: number;
   lastDrinkTime: string | null;
   lastDrinkName: string | null;
@@ -39,7 +39,7 @@ export class WidgetService {
         // Create default widget data even without profile
         const defaultWidgetData: WidgetData = {
           crashRiskScore: 0,
-          focusScore: 0,
+          caffScore: 0,
           currentCaffeineLevel: 0,
           lastDrinkTime: null,
           lastDrinkName: null,
@@ -62,7 +62,7 @@ export class WidgetService {
         last24HoursDrinks
       );
       
-      const focusResult = await FocusScoreService.calculateFocusScore(
+      const focusResult = await CaffScoreService.calculateFocusScore(
         userProfile,
         last24HoursDrinks
       );
@@ -95,7 +95,7 @@ export class WidgetService {
       
       const widgetData: WidgetData = {
         crashRiskScore: Math.round(crashRiskResult.score),
-        focusScore: Math.round(focusResult.score),
+        caffScore: Math.round(focusResult.score),
         currentCaffeineLevel: Math.round(currentCaffeineLevel),
         lastDrinkTime: lastDrink ? lastDrink.timestamp.toISOString() : null,
         lastDrinkName: lastDrink ? lastDrink.name : null,
@@ -110,7 +110,7 @@ export class WidgetService {
       
       console.log('[WidgetService] ✅ Widget data updated:', {
         crashRisk: widgetData.crashRiskScore,
-        focus: widgetData.focusScore,
+        focus: widgetData.caffScore,
         caffeine: widgetData.currentCaffeineLevel,
         lastDrink: widgetData.lastDrinkName,
         riskLevel: widgetData.riskLevel
@@ -135,7 +135,7 @@ export class WidgetService {
       try {
         const fallbackWidgetData: WidgetData = {
           crashRiskScore: 0,
-          focusScore: 0,
+          caffScore: 0,
           currentCaffeineLevel: 0,
           lastDrinkTime: null,
           lastDrinkName: null,

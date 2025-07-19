@@ -75,7 +75,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       if (widgetData) {
         Alert.alert(
           'Widget Setup',
-          `Your Jitter widget is ready! 🎉\n\nCurrent data:\n• Crash Risk: ${widgetData.crashRiskScore}\n• Focus Score: ${widgetData.focusScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
+          `Your Jitter widget is ready! 🎉\n\nCurrent data:\n• Crash Risk: ${widgetData.crashRiskScore}\n• CaffScore: ${widgetData.caffScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
           [{ text: 'Got it!' }]
         );
       } else {

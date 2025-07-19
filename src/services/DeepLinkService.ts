@@ -1,5 +1,5 @@
 import { Linking } from 'react-native';
-import { StorageService } from './StorageService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface WidgetDrinkSession {
   sessionId: string;
@@ -105,7 +105,7 @@ export class DeepLinkService {
           timestamp: new Date().toISOString()
         };
         
-        await StorageService.setItem('widget_prefill_data', JSON.stringify(preFillData));
+        await AsyncStorage.setItem('widget_prefill_data', JSON.stringify(preFillData));
         
         console.log('[DeepLinkService] ✅ Pre-fill data stored for HomeScreen');
         
@@ -189,10 +189,10 @@ export class DeepLinkService {
    */
   static async getWidgetPreFillData(): Promise<any | null> {
     try {
-      const data = await StorageService.getItem('widget_prefill_data');
+      const data = await AsyncStorage.getItem('widget_prefill_data');
       if (data) {
         // Clear it after reading
-        await StorageService.removeItem('widget_prefill_data');
+        await AsyncStorage.removeItem('widget_prefill_data');
         return JSON.parse(data);
       }
       return null;

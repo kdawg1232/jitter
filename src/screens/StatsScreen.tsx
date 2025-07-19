@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Theme } from '../theme/colors';
-import { StorageService, CrashRiskService, FocusScoreService } from '../services';
+import { StorageService, CrashRiskService, CaffScoreService } from '../services';
 import { UserProfile, CalendarDayData, CalendarSummary, DayScoreRecord } from '../types';
 
 interface StatsScreenProps {
@@ -308,8 +308,8 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           sampleTime.setHours(hour, 0, 0, 0);
           
                      try {
-             // Calculate focus score
-             const focusResult = await FocusScoreService.calculateFocusScore(
+                         // Calculate CaffScore
+            const focusResult = await CaffScoreService.calculateFocusScore(
                userProfile,
                yesterdayDrinks,
                sampleTime

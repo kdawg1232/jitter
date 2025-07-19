@@ -16,8 +16,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
-import { UserProfile, DrinkRecord, CrashRiskResult } from '../types';
-import { StorageService, CrashRiskService, FocusScoreService, ValidationService, WidgetService, DeepLinkService } from '../services';
+import { UserProfile, DrinkRecord, CrashRiskResult, FocusResult } from '../types';
+import { StorageService, CrashRiskService, CaffScoreService, ValidationService, WidgetService, DeepLinkService } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -55,7 +55,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   
   // Score switching state
   const [activeScore, setActiveScore] = useState<'crash' | 'focus'>('focus');
-  const [focusScore, setFocusScore] = useState(0); // Peak Focus Score
+  const [caffScore, setCaffScore] = useState(0); // CaffScore
+  const [caffResult, setCaffResult] = useState<FocusResult | null>(null); // Full CaffScore result for status detection
   
   // Sleep tracking state
   const [showSleepModal, setShowSleepModal] = useState(false);
@@ -78,7 +79,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       console.log('[HomeScreen] 🔄 Switched to crash risk score');
     } else {
       setActiveScore('focus');
-      console.log('[HomeScreen] 🔄 Switched to focus score');
+      console.log('[HomeScreen] 🔄 Switched to CaffScore');
     }
   };
 
@@ -299,67 +300,135 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     return customTime !== originalElapsedTimeFormatted ? customTime : originalElapsedTimeFormatted;
   };
 
-  // Calculate real focus score using the algorithm
-  const calculateFocusScore = async () => {
+  // Calculate real CaffScore using the algorithm
+  const calculateCaffScore = async () => {
     if (!userProfile) {
-      console.log('[HomeScreen] ⚠️ No user profile, setting focus score to 0');
-      setFocusScore(0);
+      console.log('[HomeScreen] ⚠️ No user profile, setting CaffScore to 0');
+      setCaffScore(0);
+      setCaffResult(null);
       return;
     }
 
     try {
-      console.log('[HomeScreen] 🎯 Calculating focus score...');
+      console.log('[HomeScreen] 🎯 Calculating CaffScore...');
       
-      // Calculate focus score using the real algorithm (sleep data retrieved internally)
-      const result = await FocusScoreService.calculateFocusScore(
+      // Calculate CaffScore using the real algorithm (sleep data retrieved internally)
+      const result = await CaffScoreService.calculateFocusScore(
         userProfile,
         last24HoursDrinks // Use 24-hour drinks for algorithm accuracy
       );
 
-      console.log('[HomeScreen] ✅ Focus score calculated:', {
+      console.log('[HomeScreen] ✅ CaffScore calculated:', {
         score: result.score,
         currentCaffeineLevel: result.currentCaffeineLevel,
         factors: result.factors
       });
 
-      console.log('[HomeScreen] 🎯 Setting focus score state:', {
-        oldScore: focusScore,
+      console.log('[HomeScreen] 🎯 Setting CaffScore state:', {
+        oldScore: caffScore,
         newScore: result.score,
-        scoreChanged: focusScore !== result.score
+        scoreChanged: caffScore !== result.score
       });
       
-      setFocusScore(result.score);
+      setCaffScore(result.score);
+      setCaffResult(result);
     } catch (error) {
-      console.error('[HomeScreen] ❌ Error calculating focus score:', error);
-      setFocusScore(0);
+      console.error('[HomeScreen] ❌ Error calculating CaffScore:', error);
+      setCaffScore(0);
+      setCaffResult(null);
     }
   };
 
-  // Update focus score when relevant data changes
+  // Get dynamic caffeine status message based on current state
+  const getCaffeineStatus = (): string => {
+    if (!caffResult || !userProfile || last24HoursDrinks.length === 0) {
+      return "No active caffeine detected";
+    }
+
+    const { factors, currentCaffeineLevel } = caffResult;
+    const { risingRate, currentLevel, absorption } = factors;
+    
+    // Check for recent consumption (last 45 minutes)
+    const now = new Date();
+    const recentThreshold = 45 * 60 * 1000; // 45 minutes in ms
+    const hasRecentDrink = last24HoursDrinks.some(drink => 
+      (now.getTime() - drink.timestamp.getTime()) < recentThreshold
+    );
+
+    console.log('[HomeScreen] 📊 Caffeine status factors:', {
+      currentCaffeineLevel: currentCaffeineLevel.toFixed(1),
+      risingRate: risingRate.toFixed(3),
+      currentLevel: currentLevel.toFixed(3),
+      absorption: absorption.toFixed(3),
+      hasRecentDrink,
+      caffScore
+    });
+
+    // Very low caffeine levels
+    if (currentCaffeineLevel < 20 && caffScore < 25) {
+      return "No active caffeine detected";
+    }
+
+    // Recent consumption + any rising = absorption phase
+    if (hasRecentDrink && risingRate > 0.5) {
+      return "Caffeine being absorbed";
+    }
+
+    // Strong rising trend = building up
+    if (risingRate > 0.65) {
+      return "Caffeine levels rising";
+    }
+
+    // High score + moderate rising = peak effect
+    if (caffScore >= 80 && risingRate > 0.35) {
+      return "Peak caffeine effect active";
+    }
+
+
+
+    // Clear declining trend = leaving system
+    if (risingRate < 0.35 && currentCaffeineLevel > 25) {
+      return "Caffeine leaving your system";
+    }
+
+    // Low levels + declining = wearing off
+    if (risingRate < 0.4 && caffScore < 50) {
+      return "Effects wearing off";
+    }
+
+    // Default for active caffeine
+    if (currentCaffeineLevel > 20) {
+      return "Caffeine leaving your system";
+    }
+
+    return "No active caffeine detected";
+  };
+
+  // Update CaffScore when relevant data changes
   useEffect(() => {
-    console.log('[HomeScreen] 🔄 Focus score useEffect triggered:', {
+    console.log('[HomeScreen] 🔄 CaffScore useEffect triggered:', {
       hasUserProfile: !!userProfile,
       last24HoursDrinksCount: last24HoursDrinks.length,
-      currentFocusScore: focusScore
+              currentCaffScore: caffScore
     });
     
     if (userProfile && last24HoursDrinks.length >= 0) {
-      calculateFocusScore();
+      calculateCaffScore();
     }
   }, [userProfile, last24HoursDrinks]); // Sleep data retrieved internally by service
 
   // Get current score and color based on active view
   const getCurrentScore = () => {
-    const score = activeScore === 'crash' ? crashRiskScore : focusScore;
+    const score = activeScore === 'crash' ? crashRiskScore : caffScore;
     console.log('[HomeScreen] 📊 getCurrentScore called:', {
       activeScore,
       crashRiskScore,
-      focusScore,
+              caffScore: caffScore,
       returnedScore: score
     });
     return score;
   };
-  const getCurrentScoreLabel = () => activeScore === 'crash' ? 'crash risk score' : 'peak focus score';
+  const getCurrentScoreLabel = () => activeScore === 'crash' ? 'crash risk score' : 'CaffScore';
   
   // Calculate progress bar fill percentage and color
   const currentScore = getCurrentScore();
@@ -370,15 +439,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     currentScore,
     progressPercentage,
     crashRiskScore,
-    focusScore
+    caffScore: caffScore
   });
   const getProgressBarColor = () => {
     if (activeScore === 'focus') {
-      // Focus score uses four-zone color scheme matching the guide
-      if (currentScore >= 75) return Theme.colors.primaryGreen;   // 75-100: Peak Focus Zone (green)
-      if (currentScore >= 50) return Theme.colors.primaryBlue;    // 50-75: Good Focus Zone (blue)  
-      if (currentScore >= 25) return Theme.colors.accentOrange;   // 25-50: Building Focus Zone (orange)
-      return Theme.colors.accentRed;                              // 0-25: Low Focus Zone (red)
+      // CaffScore uses four-zone color scheme
+      if (currentScore >= 80) return Theme.colors.primaryGreen;   // 80-100: Peak Stimulation (green)
+      if (currentScore >= 50) return Theme.colors.primaryBlue;    // 50-79: Moderate Boost (blue)  
+      if (currentScore >= 25) return Theme.colors.accentOrange;   // 25-49: Wearing Off (orange)
+      return Theme.colors.accentRed;                              // 0-24: Minimal Effect (red)
     } else {
       // Crash risk uses original colors
       if (currentScore >= 75) return Theme.colors.accentRed;
@@ -462,10 +531,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       setTotalDailyCaffeine(newTotal);
     }
     
-    // Update both crash risk and focus scores
-    console.log('[HomeScreen] 🎯 Recalculating crash risk and focus scores...');
+    // Update both crash risk and CaffScore
+    console.log('[HomeScreen] 🎯 Recalculating crash risk and CaffScore...');
     await updateCrashRiskScore();
-    await calculateFocusScore();
+    await calculateCaffScore();
     
     // Update widget data with new scores
     if (userProfile) {
@@ -536,16 +605,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       
       // Save to storage
       if (userProfile) {
+        // Save sleep data for yesterday since "last night" refers to the previous night
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        
+        // Today's date for tracking when user last logged sleep
         const today = new Date().toISOString().split('T')[0];
+        
         const sleepRecord = {
           userId: userProfile.userId,
-          date: today,
+          date: yesterdayStr,
           hoursSlept: sleepHours,
           source: 'manual' as const,
           createdAt: new Date(),
         };
         
-        console.log('[HomeScreen] 💾 Saving sleep record for date:', today);
+        console.log('[HomeScreen] 💾 Saving sleep record for date:', yesterdayStr, '(logged on:', today, ')');
         await StorageService.addSleepRecord(sleepRecord);
         await AsyncStorage.setItem('last_sleep_log_date', today);
         
@@ -556,7 +632,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         console.log('[HomeScreen] 🗑️ Clearing crash risk cache to force recalculation');
         await StorageService.clearCrashRiskCache();
         await updateCrashRiskScore();
-        await calculateFocusScore();
+        await calculateCaffScore();
         
         // Update widget data with new scores
         console.log('[HomeScreen] 📱 Updating widget data after sleep update...');
@@ -703,7 +779,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                   styles.sleepText,
                   needsSleepUpdate && styles.sleepTextAlert
                 ]}>
-                  add sleep
+                  {lastNightSleep ? `${lastNightSleep}h` : 'add sleep'}
                   {needsSleepUpdate && <Text style={styles.alertIcon}> !</Text>}
                 </Text>
               </View>
@@ -753,9 +829,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
             {/* Score-specific hints (above navigation) */}
             {activeScore === 'focus' && (
               <Text style={styles.hintText}>
-                {focusScore === 0 && todaysDrinks.length === 0
+                {caffScore === 0 && todaysDrinks.length === 0
                   ? "Score increases with caffeine intake for optimal focus"
-                  : "Predicts peak productivity in next 30-60 minutes"
+                  : getCaffeineStatus()
                 }
               </Text>
             )}
@@ -992,8 +1068,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add Sleep</Text>
-            <Text style={styles.modalSubtitle}>How many hours did you sleep last night?</Text>
+            <Text style={styles.modalTitle}>{lastNightSleep ? 'Update Sleep' : 'Add Sleep'}</Text>
+            <Text style={styles.modalSubtitle}>
+              {lastNightSleep 
+                ? `Currently: ${lastNightSleep} hours. How many hours did you sleep last night?`
+                : 'How many hours did you sleep last night?'
+              }
+            </Text>
             
             <TextInput
               style={styles.sleepInput}
@@ -1061,7 +1142,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         </View>
       </Modal>
 
-      {/* Peak Focus Info Modal */}
+      {/* CaffScore Info Modal */}
       <Modal
         visible={showFocusInfoModal}
         animationType="fade"
@@ -1071,12 +1152,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                 <View style={styles.modalOverlay}>
           <View style={styles.focusModalContent}>
             <View style={styles.focusModalHeader}>
-              <Text style={styles.modalTitle}>Peak Focus Score Guide</Text>
+              <Text style={styles.modalTitle}>CaffScore Guide</Text>
             </View>
             
             <ScrollView style={styles.focusModalScroll} showsVerticalScrollIndicator={false}>
               <Text style={styles.infoText}>
-                Predicts your optimal cognitive performance in the next 30-60 minutes.
+                Shows your current focus potential from caffeine based on what's actively in your system right now.
               </Text>
               
               {/* Score Zones */}
@@ -1084,32 +1165,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                 <View style={styles.scoreZone}>
                   <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.primaryGreen }]} />
                   <View style={styles.scoreZoneText}>
-                    <Text style={styles.scoreRange}>75-100: Peak Focus Zone</Text>
-                    <Text style={styles.scoreDescription}>Maximum focus, alertness, and cognitive performance</Text>
+                    <Text style={styles.scoreRange}>80-100: ⚡ Peak Stimulation</Text>
+                    <Text style={styles.scoreDescription}>Maximum caffeine effect, highest alertness</Text>
                   </View>
                 </View>
                 
                 <View style={styles.scoreZone}>
                   <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.primaryBlue }]} />
                   <View style={styles.scoreZoneText}>
-                    <Text style={styles.scoreRange}>50-75: Good Focus Zone</Text>
-                    <Text style={styles.scoreDescription}>Strong focus with good performance</Text>
+                    <Text style={styles.scoreRange}>50-79: 🧠 Moderate Boost</Text>
+                    <Text style={styles.scoreDescription}>Good caffeine effect, solid focus</Text>
                   </View>
                 </View>
                 
                 <View style={styles.scoreZone}>
                   <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.accentOrange }]} />
                   <View style={styles.scoreZoneText}>
-                    <Text style={styles.scoreRange}>25-50: Building Focus Zone</Text>
-                    <Text style={styles.scoreDescription}>Moderate focus, getting better or declining</Text>
+                    <Text style={styles.scoreRange}>25-49: 💤 Wearing Off</Text>
+                    <Text style={styles.scoreDescription}>Caffeine effect declining, less stimulation</Text>
                   </View>
                 </View>
                 
                 <View style={styles.scoreZone}>
                   <View style={[styles.colorIndicator, { backgroundColor: Theme.colors.accentRed }]} />
                   <View style={styles.scoreZoneText}>
-                    <Text style={styles.scoreRange}>0-25: Low Focus Zone</Text>
-                    <Text style={styles.scoreDescription}>Difficulty concentrating, low alertness</Text>
+                    <Text style={styles.scoreRange}>0-24: 🪫 Minimal Effect</Text>
+                    <Text style={styles.scoreDescription}>Little to no caffeine impact</Text>
                   </View>
                 </View>
               </View>
@@ -1117,30 +1198,68 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               {/* What Score Changes Mean */}
               <Text style={styles.sectionTitle}>📈 Score Going UP</Text>
               <Text style={styles.trendDescription}>
-                • Caffeine absorption reaching optimal levels{'\n'}
-                • Building toward peak (100-125% of tolerance){'\n'}
-                • In the 30-60 minute effectiveness window{'\n'}
-                • Expect: Increasing alertness and focus
+                • Recent caffeine consumption being absorbed{'\n'}
+                • Caffeine levels rising in your system{'\n'}
+                • Active drinks reaching peak effect{'\n'}
+                • Current stimulation increasing
               </Text>
               
               <Text style={styles.sectionTitle}>📉 Score Going DOWN</Text>
               <Text style={styles.trendDescription}>
-                • Natural caffeine elimination{'\n'}
-                • Past peak absorption window{'\n'}
-                • Possible overstimulation{'\n'}
-                • Sleep debt reducing focus capacity
+                • Caffeine naturally leaving your system{'\n'}
+                • Half-life elimination in progress{'\n'}
+                • Effects wearing off from earlier drinks{'\n'}
+                • Current stimulation decreasing
               </Text>
               
               {/* Extreme Scores */}
               <Text style={styles.sectionTitle}>🎯 Perfect Score (100)</Text>
               <Text style={styles.extremeDescription}>
-                Ideal caffeine level, perfect timing, good sleep, optimal absorption rate
+                Peak caffeine effect right now - ideal levels actively stimulating your system
               </Text>
               
               <Text style={styles.sectionTitle}>🚫 Zero Score (0)</Text>
               <Text style={styles.extremeDescription}>
-                No caffeine, severe overstimulation, very poor sleep, or wrong timing
+                No active caffeine effect - either no caffeine consumed or completely metabolized
               </Text>
+              
+              {/* Status Messages Guide */}
+              <Text style={styles.sectionTitle}>📱 Status Messages</Text>
+              <Text style={styles.infoText}>
+                Below your CaffScore, you'll see real-time status messages showing what's happening with your caffeine right now:
+              </Text>
+              
+              <View style={styles.statusTable}>
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>☕ "Caffeine being absorbed"</Text>
+                  <Text style={styles.statusDescription}>Just drank something + levels rising</Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>⬆️ "Caffeine levels rising"</Text>
+                  <Text style={styles.statusDescription}>Strong upward trend detected</Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>⚡ "Peak caffeine effect active"</Text>
+                  <Text style={styles.statusDescription}>High CaffScore (80+) + stable/rising</Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>⬇️ "Caffeine leaving your system"</Text>
+                  <Text style={styles.statusDescription}>Clear declining trend</Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>💤 "Effects wearing off"</Text>
+                  <Text style={styles.statusDescription}>Low levels + declining</Text>
+                </View>
+                
+                <View style={styles.statusRow}>
+                  <Text style={styles.statusLabel}>🪫 "No active caffeine detected"</Text>
+                  <Text style={styles.statusDescription}>Minimal/no active caffeine</Text>
+                </View>
+              </View>
              </ScrollView>
             
             <View style={styles.focusModalFooter}>
@@ -1751,5 +1870,26 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: Theme.spacing.md,
     textAlign: 'center',
+  },
+  statusTable: {
+    marginVertical: Theme.spacing.md,
+  },
+  statusRow: {
+    marginBottom: Theme.spacing.md,
+    paddingBottom: Theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.divider,
+  },
+  statusLabel: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.xs,
+    fontSize: 14,
+  },
+  statusDescription: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
 }); 

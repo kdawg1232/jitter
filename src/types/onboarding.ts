@@ -126,6 +126,6 @@ export const ONBOARDING_CONTENT = {
   6: {
     title: "you're all set!",
     subtitle: 'your personalized caffeine insights are ready',
-    description: 'Start tracking your caffeine to see real-time crash risk and peak focus scores'
+    description: 'Start tracking your caffeine to see real-time crash risk and CaffScore'
   }
 }; 

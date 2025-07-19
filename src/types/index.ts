@@ -76,17 +76,17 @@ export interface RiskCurvePoint {
   caffeineLevel: number;
 }
 
-// Peak Focus Score Types
+// CaffScore Types
 export interface FocusFactors {
   currentLevel: number;     // Current caffeine concentration factor (0-1)
   risingRate: number;       // How rapidly caffeine is rising (0-1)
   tolerance: number;        // Caffeine tolerance factor (0-1)
   focus: number;            // Sleep quality and focus capacity (0-1)
-  absorption: number;       // How much caffeine is still being absorbed (0-1)
+  absorption: number;       // How much caffeine is currently active (0-1)
 }
 
 export interface FocusResult {
-  score: number;                    // 0-100 peak focus score
+  score: number;                    // 0-100 CaffScore
   factors: FocusFactors;            // Component factors
   personalizedHalfLife: number;     // User's caffeine half-life in hours
   currentCaffeineLevel: number;     // Current mg in system
@@ -187,7 +187,7 @@ export type CrashRiskServiceConfig = {
 export interface DayScoreRecord {
   userId: string;
   date: string;                // YYYY-MM-DD format
-  averagePeakScore: number;    // Average peak focus score for the day
+  averagePeakScore: number;    // Average CaffScore for the day
   averageCrashRisk: number;    // Average crash risk score for the day
   totalCaffeine: number;       // Total caffeine consumed on this day
   createdAt: Date;
