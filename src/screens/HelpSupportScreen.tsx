@@ -25,7 +25,7 @@ const FAQ_DATA: FAQItem[] = [
   },
   {
     question: "why is my health score so low?",
-    answer: "Your health score is based on sleep quality, caffeine intake timing, and crash risk patterns. Try consuming caffeine earlier in the day and maintaining consistent sleep to improve your score."
+    answer: "Your health score is based on sleep quality, caffeine intake timing, and focus patterns. Try consuming caffeine earlier in the day and maintaining consistent sleep to improve your score."
   },
   {
     question: "how do i customize my goal?",

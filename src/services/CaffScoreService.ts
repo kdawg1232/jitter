@@ -6,7 +6,7 @@ import {
   DEFAULT_VALUES 
 } from '../types';
 import { ValidationService } from './ValidationService';
-import { CrashRiskService } from './CrashRiskService';
+
 import { StorageService } from './StorageService';
 
 export class CaffScoreService {
@@ -61,9 +61,9 @@ export class CaffScoreService {
     const tenMinutesAgo = now - (10 * 60 * 1000);
     const twentyMinutesAgo = now - (20 * 60 * 1000);
     
-    const currentLevel = CrashRiskService.calculateCurrentCaffeineLevel(drinks, halfLife, currentTime);
-    const level10MinAgo = CrashRiskService.calculateCurrentCaffeineLevel(drinks, halfLife, new Date(tenMinutesAgo));
-    const level20MinAgo = CrashRiskService.calculateCurrentCaffeineLevel(drinks, halfLife, new Date(twentyMinutesAgo));
+    const currentLevel = CaffScoreService.calculateCurrentCaffeineLevel(drinks, halfLife, currentTime);
+    const level10MinAgo = CaffScoreService.calculateCurrentCaffeineLevel(drinks, halfLife, new Date(tenMinutesAgo));
+    const level20MinAgo = CaffScoreService.calculateCurrentCaffeineLevel(drinks, halfLife, new Date(twentyMinutesAgo));
     
     // Calculate rate of change (mg/min)
     const recentRate = (currentLevel - level10MinAgo) / 10;
@@ -331,13 +331,13 @@ export class CaffScoreService {
     });
     
     // Calculate personalized half-life
-    const personalizedHalfLife = CrashRiskService.calculatePersonalizedHalfLife(userProfile);
+    const personalizedHalfLife = CaffScoreService.calculatePersonalizedHalfLife(userProfile);
     
     // Calculate current caffeine level
-    const currentCaffeineLevel = CrashRiskService.calculateCurrentCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
+    const currentCaffeineLevel = CaffScoreService.calculateCurrentCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
     
     // Calculate peak caffeine level
-    const peakCaffeineLevel = CrashRiskService.calculatePeakCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
+    const peakCaffeineLevel = CaffScoreService.calculatePeakCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
     
     // Calculate tolerance threshold
     const toleranceThreshold = userProfile.meanDailyCaffeineMg || 200;
@@ -355,12 +355,12 @@ export class CaffScoreService {
     const tolerance = this.calculateFocusTolerance(userProfile.meanDailyCaffeineMg, userProfile.weightKg, userProfile);
     
     // Calculate sleep debt and circadian factors
-    const sleepDebt = CrashRiskService.calculateSleepDebt(
+    const sleepDebt = await CaffScoreService.calculateSleepDebt(
+      userProfile, 
       effectiveSleepHours, 
-      userProfile.averageSleep7Days, 
-      CrashRiskService.hasSevenDaysOfSleepData(userProfile.createdAt)
+      CaffScoreService.hasSevenDaysOfSleepData(userProfile.createdAt)
     );
-    const circadian = CrashRiskService.calculateCircadianFactor(currentTime);
+    const circadian = CaffScoreService.calculateCircadianFactor(currentTime);
     
     const focus = this.calculateFocusCapacity(sleepDebt, circadian, userProfile.age);
     const currentActivity = this.calculateCurrentCaffeineActivity(validDrinks, personalizedHalfLife, currentTime);
@@ -420,5 +420,140 @@ export class CaffScoreService {
       validUntil,
       calculatedAt: currentTime
     };
+  }
+
+  // ===== CAFFEINE CALCULATION UTILITIES =====
+  // Caffeine calculation utilities
+
+  /**
+   * Calculate current caffeine level in mg based on drinks and metabolism
+   */
+  static calculateCurrentCaffeineLevel(drinks: DrinkRecord[], halfLifeHours: number, currentTime: Date): number {
+    let totalCaffeine = 0;
+    
+    for (const drink of drinks) {
+      const hoursElapsed = (currentTime.getTime() - drink.timestamp.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursElapsed >= 0) {
+        // Standard exponential decay: C(t) = C0 * (1/2)^(t/halfLife)
+        const remaining = drink.actualCaffeineConsumed * Math.pow(0.5, hoursElapsed / halfLifeHours);
+        totalCaffeine += remaining;
+      }
+    }
+    
+    return totalCaffeine;
+  }
+
+  /**
+   * Calculate personalized caffeine half-life based on user factors
+   */
+  static calculatePersonalizedHalfLife(userProfile: UserProfile): number {
+    let baseHalfLife = 5.0; // Standard 5 hours
+    
+    // Age factor (metabolism slows with age)
+    if (userProfile.age > 65) {
+      baseHalfLife *= 1.3;
+    } else if (userProfile.age > 40) {
+      baseHalfLife *= 1.1;
+    }
+    
+    // Smoking accelerates metabolism
+    if (userProfile.smoker) {
+      baseHalfLife *= 0.7;
+    }
+    
+    // Oral contraceptives slow metabolism
+    if (userProfile.oralContraceptives) {
+      baseHalfLife *= 1.4;
+    }
+    
+    // Pregnancy significantly slows metabolism
+    if (userProfile.pregnant) {
+      baseHalfLife *= 2.0;
+    }
+    
+    return Math.max(baseHalfLife, 2.0); // Minimum 2 hours
+  }
+
+  /**
+   * Calculate peak caffeine level that was reached
+   */
+  static calculatePeakCaffeineLevel(drinks: DrinkRecord[], halfLifeHours: number, currentTime: Date): number {
+    let peakLevel = 0;
+    
+    for (const drink of drinks) {
+      const hoursElapsed = (currentTime.getTime() - drink.timestamp.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursElapsed >= 0) {
+        // Peak is reached at consumption time for instant absorption model
+        const peakTime = drink.timestamp;
+        const levelAtPeak = this.calculateCurrentCaffeineLevel(drinks, halfLifeHours, peakTime);
+        peakLevel = Math.max(peakLevel, levelAtPeak);
+      }
+    }
+    
+    return peakLevel;
+  }
+
+  /**
+   * Calculate sleep debt in hours
+   */
+  static async calculateSleepDebt(
+    userProfile: UserProfile,
+    effectiveSleepHours: number,
+    hasSevenDaysData: boolean
+  ): Promise<number> {
+    const idealSleep = userProfile.averageSleep7Days || 7.5;
+    
+    if (hasSevenDaysData) {
+      // Use 7-day average for ideal sleep
+      const averageSleep7Days = userProfile.averageSleep7Days || 7.5;
+      const debtHours = Math.max(0, averageSleep7Days - effectiveSleepHours);
+      return debtHours;
+    } else {
+      // Use default ideal sleep
+      const debtHours = Math.max(0, idealSleep - effectiveSleepHours);
+      return debtHours;
+    }
+  }
+
+  /**
+   * Check if user has at least 7 days of sleep data
+   */
+  static hasSevenDaysOfSleepData(createdAt: Date): boolean {
+    const daysSinceCreation = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceCreation >= 7;
+  }
+
+  /**
+   * Calculate circadian rhythm factor (0-1, where 1 is optimal alertness time)
+   */
+  static calculateCircadianFactor(currentTime: Date): number {
+    const hour = currentTime.getHours();
+    const minute = currentTime.getMinutes();
+    const timeDecimal = hour + minute / 60;
+    
+    // Circadian alertness peaks around 10 AM and 2 PM, lowest around 3 AM
+    if (timeDecimal >= 9 && timeDecimal <= 11) {
+      // Morning peak (9-11 AM)
+      return 1.0;
+    } else if (timeDecimal >= 13 && timeDecimal <= 15) {
+      // Afternoon peak (1-3 PM)
+      return 0.9;
+    } else if (timeDecimal >= 6 && timeDecimal <= 9) {
+      // Morning ramp up (6-9 AM)
+      return 0.7;
+    } else if (timeDecimal >= 15 && timeDecimal <= 18) {
+      // Afternoon decline (3-6 PM)
+      return 0.8;
+    } else if (timeDecimal >= 18 && timeDecimal <= 22) {
+      // Evening (6-10 PM)
+      return 0.6;
+    } else if (timeDecimal >= 22 || timeDecimal <= 6) {
+      // Night/early morning (10 PM - 6 AM)
+      return 0.4;
+    } else {
+      return 0.7; // Default
+    }
   }
 } 

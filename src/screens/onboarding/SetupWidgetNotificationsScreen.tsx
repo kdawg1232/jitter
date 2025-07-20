@@ -47,11 +47,9 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
         // Store notification setup status in onboarding data
         onUpdateData({ notificationsEnabled: true });
         
-        Alert.alert(
-          'Notifications Enabled! 🎉',
-          'You\'ll now receive alerts when your caffeine levels are rising for optimal focus timing.',
-          [{ text: 'Great!' }]
-        );
+        // Send setup notification instead of popup
+        await NotificationService.scheduleSetupNotification();
+        console.log('[SetupWidgetNotificationsScreen] ✅ Notifications enabled successfully');
       } else {
         Alert.alert(
           'Permission Required',
@@ -85,6 +83,18 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
   const handleSkip = () => {
     onUpdateData({ notificationsEnabled: false });
     onNext();
+  };
+
+  const handleNotificationDisable = async () => {
+    try {
+      console.log('[SetupWidgetNotificationsScreen] 🔇 Disabling notifications...');
+      await NotificationService.disableNotifications();
+      setNotificationsEnabled(false);
+      onUpdateData({ notificationsEnabled: false });
+      console.log('[SetupWidgetNotificationsScreen] ✅ Notifications disabled');
+    } catch (error) {
+      console.error('[SetupWidgetNotificationsScreen] ❌ Error disabling notifications:', error);
+    }
   };
 
   const handleContinue = () => {
@@ -129,7 +139,17 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
 
         {/* Notifications Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>notifications</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>notifications</Text>
+            {notificationsEnabled && (
+              <TouchableOpacity 
+                style={styles.headerDisableButton}
+                onPress={handleNotificationDisable}
+              >
+                <Text style={styles.headerDisableButtonText}>disable</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.card}>
             <TouchableOpacity 
               style={styles.notificationRow} 
@@ -148,8 +168,8 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
                   </Text>
                   <Text style={styles.notificationSubtitle}>
                     {notificationsEnabled 
-                      ? 'alerts when caffeine levels rise' 
-                      : 'add to help you know when to drink coffee'
+                      ? 'alerts based on your caffeine levels' 
+                      : `get alerts based on${'\n'}caffeine levels`
                     }
                   </Text>
                 </View>
@@ -373,5 +393,24 @@ const styles = StyleSheet.create({
   continueButtonText: {
     ...Theme.fonts.button,
     color: Theme.colors.white,
+  },
+  headerDisableButton: {
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: 6,
+    borderRadius: Theme.borderRadius.medium,
+    backgroundColor: Theme.colors.accentRed,
+    alignSelf: 'center',
+    marginTop: -2,
+  },
+  headerDisableButtonText: {
+    ...Theme.fonts.button,
+    color: Theme.colors.white,
+    fontSize: 13,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
   },
 }); 

@@ -221,7 +221,7 @@ export const OnboardingCaffeineScreen: React.FC<OnboardingCaffeineScreenProps> =
           <View style={styles.infoContainer}>
             <Text style={styles.infoText}>
               This information helps us calculate your personal caffeine tolerance and provide 
-              more accurate crash risk predictions. We'll also learn from your daily tracking.
+              more accurate focus predictions. We'll also learn from your daily tracking.
             </Text>
           </View>
         </ScrollView>

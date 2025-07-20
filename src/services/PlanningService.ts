@@ -9,8 +9,8 @@ import {
   PlanningResult,
   DEFAULT_VALUES 
 } from '../types';
-import { CrashRiskService } from './CrashRiskService';
 import { StorageService } from './StorageService';
+import { CaffScoreService } from './CaffScoreService';
 
 export class PlanningService {
   /**
@@ -34,7 +34,7 @@ export class PlanningService {
     userProfile: UserProfile,
     sleepBufferHours: number
   ): Date {
-    const personalizedHalfLife = CrashRiskService.calculatePersonalizedHalfLife(userProfile);
+    const personalizedHalfLife = CaffScoreService.calculatePersonalizedHalfLife(userProfile);
     
     // Calculate how many half-lives needed to reach 25mg (safe sleep level)
     const targetLevel = 25; // mg

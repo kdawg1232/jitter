@@ -196,7 +196,7 @@ export class NotificationService {
 
       await this.scheduleLocalNotification(
         'Caffeine Levels Rising! ☕️',
-        'Your caffeine is starting to kick in. Perfect timing for focused work!',
+        'Your caffeine is starting to kick in.',
         { type: 'caffeine_rising' }
       );
     } catch (error) {
@@ -267,6 +267,22 @@ export class NotificationService {
       );
     } catch (error) {
       console.error('[NotificationService] ❌ Failed to schedule peak caffeine notification:', error);
+    }
+  }
+
+  /**
+   * Schedule setup completion notification
+   */
+  static async scheduleSetupNotification(): Promise<void> {
+    try {
+      await this.scheduleLocalNotification(
+        'Your Jitter notifications are now set up!',
+        'You will receive alerts based on your caffeine levels.',
+        { type: 'setup_complete' }
+      );
+      console.log('[NotificationService] ✅ Setup notification sent');
+    } catch (error) {
+      console.error('[NotificationService] ❌ Failed to schedule setup notification:', error);
     }
   }
 
@@ -365,8 +381,15 @@ export class NotificationService {
       await AsyncStorage.setItem(this.PREFERENCES_KEY, JSON.stringify({
         enabled: true,
         caffeineRisingEnabled: true, // Enable caffeine notifications by default
+        permissionGranted: true,
         setupAt: new Date().toISOString(),
       }));
+
+      console.log('[NotificationService] 💾 Notification preferences saved:', {
+        enabled: true,
+        caffeineRisingEnabled: true,
+        permissionGranted: true
+      });
 
       return true;
     } catch (error) {

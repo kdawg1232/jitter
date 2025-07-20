@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, DrinkRecord, SleepRecord, CrashRiskResult, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, FocusSession, CaffeinePlan, PlanningPreferences, STORAGE_KEYS } from '../types';
+import { UserProfile, DrinkRecord, SleepRecord, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, FocusSession, CaffeinePlan, PlanningPreferences, STORAGE_KEYS } from '../types';
 
 export class StorageService {
   // User Profile Operations
@@ -413,55 +413,7 @@ export class StorageService {
     }
   }
 
-  // Crash Risk Cache Operations
-  static async saveCrashRiskCache(result: CrashRiskResult): Promise<void> {
-    try {
-      console.log('[StorageService] 💾 Saving crash risk cache:', {
-        score: result.score,
-        calculatedAt: result.calculatedAt.toISOString(),
-        validUntil: result.validUntil.toISOString(),
-        currentCaffeineLevel: result.currentCaffeineLevel,
-        peakCaffeineLevel: result.peakCaffeineLevel
-      });
-      
-      await AsyncStorage.setItem(STORAGE_KEYS.CRASH_RISK_CACHE, JSON.stringify(result));
-      console.log('[StorageService] ✅ Crash risk cache saved successfully');
-    } catch (error) {
-      console.error('[StorageService] ❌ Error saving crash risk cache:', error);
-      // Don't throw - caching is optional
-    }
-  }
 
-  static async getCrashRiskCache(): Promise<CrashRiskResult | null> {
-    try {
-      const cacheData = await AsyncStorage.getItem(STORAGE_KEYS.CRASH_RISK_CACHE);
-      if (!cacheData) return null;
-      
-      const result = JSON.parse(cacheData);
-      // Convert date strings back to Date objects
-      result.validUntil = new Date(result.validUntil);
-      result.calculatedAt = new Date(result.calculatedAt);
-      
-      // Check if cache is still valid
-      if (new Date() > result.validUntil) {
-        await this.clearCrashRiskCache();
-        return null;
-      }
-      
-      return result;
-    } catch (error) {
-      console.error('Error loading crash risk cache:', error);
-      return null;
-    }
-  }
-
-  static async clearCrashRiskCache(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.CRASH_RISK_CACHE);
-    } catch (error) {
-      console.error('Error clearing crash risk cache:', error);
-    }
-  }
 
   // Migration and Legacy Data Operations
   static async migrateLegacyDrinkData(): Promise<void> {
@@ -562,7 +514,6 @@ export class StorageService {
         userId: score.userId,
         date: score.date,
         averagePeakScore: score.averagePeakScore,
-        averageCrashRisk: score.averageCrashRisk,
         totalCaffeine: score.totalCaffeine
       });
       
@@ -928,7 +879,6 @@ export class StorageService {
           dayNumber: day,
           totalCaffeine,
           averagePeakScore: dayScore?.averagePeakScore,
-          averageCrashRisk: dayScore?.averageCrashRisk,
           isToday: dateKey === todayKey,
           hasData: dayDrinks.length > 0 || !!dayScore
         });
@@ -1127,7 +1077,6 @@ export class StorageService {
         AsyncStorage.removeItem(STORAGE_KEYS.USER_PROFILE),
         AsyncStorage.removeItem(STORAGE_KEYS.SLEEP_RECORDS),
         AsyncStorage.removeItem(STORAGE_KEYS.DRINKS_HISTORY),
-        AsyncStorage.removeItem(STORAGE_KEYS.CRASH_RISK_CACHE),
         AsyncStorage.removeItem(STORAGE_KEYS.DAY_SCORES),
         AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA),
         AsyncStorage.removeItem(STORAGE_KEYS.FOCUS_SESSIONS),
@@ -1144,16 +1093,14 @@ export class StorageService {
     profileExists: boolean;
     sleepRecordsCount: number;
     drinksCount: number;
-    cacheExists: boolean;
     dayScoresCount: number;
     streakDataExists: boolean;
   }> {
     try {
-      const [profile, sleepRecords, drinks, cache, dayScores, streakData] = await Promise.all([
+      const [profile, sleepRecords, drinks, dayScores, streakData] = await Promise.all([
         this.getUserProfile(),
         this.getSleepRecords(),
         this.getDrinksHistory(),
-        this.getCrashRiskCache(),
         this.getDayScores(),
         this.getStreakData()
       ]);
@@ -1162,7 +1109,6 @@ export class StorageService {
         profileExists: profile !== null,
         sleepRecordsCount: sleepRecords.length,
         drinksCount: drinks.length,
-        cacheExists: cache !== null,
         dayScoresCount: dayScores.length,
         streakDataExists: streakData !== null
       };
@@ -1172,7 +1118,6 @@ export class StorageService {
         profileExists: false,
         sleepRecordsCount: 0,
         drinksCount: 0,
-        cacheExists: false,
         dayScoresCount: 0,
         streakDataExists: false
       };

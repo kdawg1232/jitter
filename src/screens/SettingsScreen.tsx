@@ -63,22 +63,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       if (setupSuccessful) {
         setNotificationsEnabled(true);
         
-        // Show initial success message
-        Alert.alert(
-          'Your Jitter notifications are set up!',
-          '',
-          [{ text: 'OK' }]
-        );
+        // Send setup notification instead of popups
+        await NotificationService.scheduleSetupNotification();
         
-        // Test notification
-        await NotificationService.scheduleCaffeineRisingNotification();
+        // Force refresh status after a brief delay to ensure persistence
+        setTimeout(() => {
+          checkNotificationStatus();
+        }, 1000);
         
-        // Show final configuration message  
-        Alert.alert(
-          'Notifications are enabled!',
-          'You will now receive alerts based off of the amount of caffeine in your body!',
-          [{ text: 'Great!' }]
-        );
+        console.log('[SettingsScreen] ✅ Notifications enabled successfully');
       } else {
         Alert.alert(
           'Permission Required',
@@ -164,7 +157,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       if (widgetData) {
         Alert.alert(
           'Widget Setup',
-          `Your Jitter widget is ready! 🎉\n\nCurrent data:\n• Crash Risk: ${widgetData.crashRiskScore}\n• CaffScore: ${widgetData.caffScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
+          `Your Jitter widget is ready! 🎉\n CaffScore: ${widgetData.caffScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
           [{ text: 'Got it!' }]
         );
       } else {
@@ -286,7 +279,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Notifications Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>notifications</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>notifications</Text>
+            {notificationsEnabled && (
+              <TouchableOpacity 
+                style={styles.headerDisableButton}
+                onPress={handleNotificationDisable}
+              >
+                <Text style={styles.headerDisableButtonText}>disable</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.card}>
             <View style={[
               styles.notificationRow,
@@ -310,7 +313,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <Text style={styles.notificationSubtitle}>
                       {notificationsEnabled 
                         ? 'alerts based on your caffeine levels' 
-                        : 'get alerts based on caffeine levels'
+                        : `get alerts based on${'\n'}caffeine levels`
                       }
                     </Text>
                   </View>
@@ -326,14 +329,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </View>
                 )}
               </TouchableOpacity>
-              {notificationsEnabled && (
-                <TouchableOpacity 
-                  style={styles.disableButton}
-                  onPress={handleNotificationDisable}
-                >
-                  <Text style={styles.disableButtonText}>disable</Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
         </View>
@@ -591,20 +586,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  disableButton: {
-    backgroundColor: Theme.colors.accentRed,
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.medium,
-    alignSelf: 'center',
-    marginTop: Theme.spacing.sm,
-    marginBottom: Theme.spacing.sm,
-  },
-  disableButtonText: {
-    ...Theme.fonts.button,
-    color: Theme.colors.white,
-    fontSize: 13,
-  },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -658,5 +639,24 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: Theme.spacing.xxl,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  headerDisableButton: {
+    backgroundColor: Theme.colors.accentRed,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: 6,
+    borderRadius: Theme.borderRadius.medium,
+    alignSelf: 'center',
+    marginTop: -2,
+  },
+  headerDisableButtonText: {
+    ...Theme.fonts.button,
+    color: Theme.colors.white,
+    fontSize: 13,
   },
 }); 

@@ -51,24 +51,7 @@ export interface DrinkRecord {
   recordedAt: Date;                    // When record was created
 }
 
-// Crash Risk Calculation Types
-export interface CrashRiskFactors {
-  delta: number;          // Caffeine concentration drop (0-1)
-  sleepDebt: number;      // Sleep deficit factor (0-1)
-  tolerance: number;      // Caffeine tolerance factor (0-1)
-  metabolic: number;      // Personal metabolism modifier (0.8-1.2)
-  circadian: number;      // Time-of-day sensitivity factor (0-1)
-}
 
-export interface CrashRiskResult {
-  score: number;                    // 0-100 crash risk score
-  factors: CrashRiskFactors;        // Component factors
-  personalizedHalfLife: number;     // User's caffeine half-life in hours
-  currentCaffeineLevel: number;     // Current mg in system
-  peakCaffeineLevel: number;        // Recent peak mg level
-  validUntil: Date;                 // When this calculation expires
-  calculatedAt: Date;               // When calculation was performed
-}
 
 export interface RiskCurvePoint {
   time: Date;
@@ -100,14 +83,12 @@ export interface AppStorage {
   userProfile: UserProfile | null;
   sleepRecords: SleepRecord[];         // Last 30 days
   drinksHistory: DrinkRecord[];        // Last 30 days
-  crashRiskCache: CrashRiskResult | null;
 }
 
 export const STORAGE_KEYS = {
   USER_PROFILE: 'jitter_user_profile',
   SLEEP_RECORDS: 'jitter_sleep_records',
   DRINKS_HISTORY: 'jitter_drinks_history',
-  CRASH_RISK_CACHE: 'jitter_crash_risk_cache',
   DAY_SCORES: 'jitter_day_scores',
   STREAK_DATA: 'jitter_streak_data',
   FOCUS_SESSIONS: 'jitter_focus_sessions',
@@ -128,13 +109,6 @@ export interface ProfileValidationResult extends ValidationResult {
 }
 
 // UI State Types
-export interface CrashRiskDisplayState {
-  score: number;
-  level: 'low' | 'medium' | 'high';   // Based on score ranges
-  color: string;                       // Theme color for display
-  message: string;                     // User-friendly interpretation
-  recommendation?: string;             // Action recommendation
-}
 
 // Settings Screen Types
 export interface SettingsFormData {
@@ -156,11 +130,6 @@ export interface SleepEntryData {
 }
 
 // Constants
-export const CRASH_RISK_THRESHOLDS = {
-  LOW: 30,
-  MEDIUM: 70,
-  HIGH: 100
-} as const;
 
 export const DEFAULT_VALUES = {
   BASELINE_SLEEP_HOURS: 7.5,
@@ -178,20 +147,13 @@ export const convertWeight = {
   kgToLbs: (kg: number): number => kg * 2.20462
 };
 
-// Export utility type for the main crash risk service
-export type CrashRiskServiceConfig = {
-  userProfile: UserProfile;
-  drinks: DrinkRecord[];
-  lastNightSleep: number;
-  currentTime?: Date;
-};
+
 
 // Calendar Types
 export interface DayScoreRecord {
   userId: string;
   date: string;                // YYYY-MM-DD format
   averagePeakScore: number;    // Average CaffScore for the day
-  averageCrashRisk: number;    // Average crash risk score for the day
   totalCaffeine: number;       // Total caffeine consumed on this day
   createdAt: Date;
 }
@@ -201,7 +163,6 @@ export interface CalendarDayData {
   dayNumber: number;           // Day of the month (1-31)
   totalCaffeine: number;       // Total caffeine for this day
   averagePeakScore?: number;   // Average peak score if day is complete
-  averageCrashRisk?: number;   // Average crash risk if day is complete
   isToday: boolean;            // Whether this is the current day
   hasData: boolean;            // Whether there's any data for this day
 }

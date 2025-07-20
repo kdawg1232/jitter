@@ -1,19 +1,17 @@
 import { StorageService } from './StorageService';
-import { CrashRiskService } from './CrashRiskService';
+
 import { CaffScoreService } from './CaffScoreService';
 import { UserProfile, DrinkRecord } from '../types';
 import JitterWidgetBridge from '../native/JitterWidgetBridge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface WidgetData {
-  crashRiskScore: number;
   caffScore: number;
   currentCaffeineLevel: number;
   lastDrinkTime: string | null;
   lastDrinkName: string | null;
   nextOptimalTime: string | null;
   lastUpdated: string;
-  riskLevel: 'low' | 'medium' | 'high';
   userId: string;
 }
 
@@ -38,14 +36,13 @@ export class WidgetService {
         
         // Create default widget data even without profile
         const defaultWidgetData: WidgetData = {
-          crashRiskScore: 0,
           caffScore: 0,
           currentCaffeineLevel: 0,
           lastDrinkTime: null,
           lastDrinkName: null,
           nextOptimalTime: null,
           lastUpdated: new Date().toISOString(),
-          riskLevel: 'low',
+          
           userId
         };
         
@@ -56,12 +53,7 @@ export class WidgetService {
         return;
       }
       
-      // Calculate current scores with proper parameters
-      const crashRiskResult = await CrashRiskService.calculateCrashRisk(
-        userProfile,
-        last24HoursDrinks
-      );
-      
+      // Calculate current CaffScore
       const focusResult = await CaffScoreService.calculateFocusScore(
         userProfile,
         last24HoursDrinks
@@ -73,17 +65,12 @@ export class WidgetService {
       );
       const lastDrink = sortedDrinks.length > 0 ? sortedDrinks[0] : null;
       
-      // Calculate current caffeine level with correct method name
-      const currentCaffeineLevel = CrashRiskService.calculateCurrentCaffeineLevel(
+      // Calculate current caffeine level
+      const currentCaffeineLevel = CaffScoreService.calculateCurrentCaffeineLevel(
         last24HoursDrinks,
-        CrashRiskService.calculatePersonalizedHalfLife(userProfile),
+        CaffScoreService.calculatePersonalizedHalfLife(userProfile),
         new Date()
       );
-      
-      // Determine risk level
-      let riskLevel: 'low' | 'medium' | 'high' = 'low';
-      if (crashRiskResult.score >= 71) riskLevel = 'high';
-      else if (crashRiskResult.score >= 31) riskLevel = 'medium';
       
       // Calculate next optimal time (simplified - 2-3 hours after last drink)
       let nextOptimalTime: string | null = null;
@@ -94,14 +81,12 @@ export class WidgetService {
       }
       
       const widgetData: WidgetData = {
-        crashRiskScore: Math.round(crashRiskResult.score),
         caffScore: Math.round(focusResult.score),
         currentCaffeineLevel: Math.round(currentCaffeineLevel),
         lastDrinkTime: lastDrink ? lastDrink.timestamp.toISOString() : null,
         lastDrinkName: lastDrink ? lastDrink.name : null,
         nextOptimalTime,
         lastUpdated: new Date().toISOString(),
-        riskLevel,
         userId
       };
       
@@ -109,11 +94,9 @@ export class WidgetService {
       await AsyncStorage.setItem(this.WIDGET_DATA_KEY, JSON.stringify(widgetData));
       
       console.log('[WidgetService] ✅ Widget data updated:', {
-        crashRisk: widgetData.crashRiskScore,
         focus: widgetData.caffScore,
         caffeine: widgetData.currentCaffeineLevel,
-        lastDrink: widgetData.lastDrinkName,
-        riskLevel: widgetData.riskLevel
+        lastDrink: widgetData.lastDrinkName
       });
       
       // Update native widget via App Groups
@@ -134,14 +117,13 @@ export class WidgetService {
       // Create fallback widget data on error
       try {
         const fallbackWidgetData: WidgetData = {
-          crashRiskScore: 0,
           caffScore: 0,
           currentCaffeineLevel: 0,
           lastDrinkTime: null,
           lastDrinkName: null,
           nextOptimalTime: null,
           lastUpdated: new Date().toISOString(),
-          riskLevel: 'low',
+
           userId
         };
         
@@ -204,27 +186,7 @@ export class WidgetService {
     }
   }
   
-  /**
-   * Gets emoji for risk level
-   */
-  static getRiskEmoji(riskLevel: 'low' | 'medium' | 'high'): string {
-    switch (riskLevel) {
-      case 'low': return '🟢';
-      case 'medium': return '🟡';
-      case 'high': return '🔴';
-      default: return '⚪';
-    }
-  }
+
   
-  /**
-   * Gets risk text for widget
-   */
-  static getRiskText(riskLevel: 'low' | 'medium' | 'high'): string {
-    switch (riskLevel) {
-      case 'low': return 'Low';
-      case 'medium': return 'Medium';
-      case 'high': return 'High';
-      default: return 'Unknown';
-    }
-  }
+
 } 

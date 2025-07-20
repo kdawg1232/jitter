@@ -104,7 +104,7 @@ export const convertWeight = {
 export const ONBOARDING_CONTENT = {
   1: {
     title: 'welcome to jitter',
-    subtitle: "let's predict your caffeine crash risk in real-time",
+    subtitle: "let's optimize your caffeine intake in real-time",
     description: 'We need a few details to personalize your crash predictions'
   },
   2: {
@@ -130,6 +130,6 @@ export const ONBOARDING_CONTENT = {
   6: {
     title: "you're all set!",
     subtitle: 'your personalized caffeine insights are ready',
-    description: 'Start tracking your caffeine to see real-time crash risk and CaffScore'
+    description: 'Start tracking your caffeine to see real-time focus levels and CaffScore'
   }
 }; 

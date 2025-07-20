@@ -32,7 +32,7 @@ export class ValidationService {
     const warnings: string[] = [];
     const missingRequiredFields: string[] = [];
 
-    // Required fields for crash risk calculation
+    // Required fields for focus calculation
     if (!profile.weightKg || !this.validateWeight(profile.weightKg)) {
       errors.push('Valid weight is required (30-300 kg)');
       missingRequiredFields.push('weight');

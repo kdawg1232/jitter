@@ -9,7 +9,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { Theme } from '../theme/colors';
-import { StorageService, CrashRiskService, CaffScoreService } from '../services';
+import { StorageService, CaffScoreService } from '../services';
 import { UserProfile, CalendarDayData, CalendarSummary, DayScoreRecord } from '../types';
 
 interface StatsScreenProps {
@@ -28,7 +28,6 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
   const [summary, setSummary] = useState<CalendarSummary | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [dayScoreMode, setDayScoreMode] = useState<{ [key: string]: 'peak' | 'crash' }>({});
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -176,22 +175,7 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
     setCurrentDate(newDate);
   };
 
-  const handleDayPress = (dayData: CalendarDayData) => {
-    if (!dayData.hasData || dayData.isToday) return;
-    
-    // Toggle between peak score and crash risk score
-    const currentMode = dayScoreMode[dayData.date] || 'peak';
-    const newMode = currentMode === 'peak' ? 'crash' : 'peak';
-    
-    setDayScoreMode(prev => ({
-      ...prev,
-      [dayData.date]: newMode
-    }));
-  };
-
   const renderDayContent = (dayData: CalendarDayData) => {
-    const mode = dayScoreMode[dayData.date] || 'peak';
-    
     if (dayData.isToday) {
       // Show only day number for today
       return <Text style={styles.dayText}>{dayData.dayNumber}</Text>;
@@ -202,8 +186,8 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
       return <Text style={styles.dayText}>{dayData.dayNumber}</Text>;
     }
     
-    // Show day number and score if available
-    const score = mode === 'peak' ? dayData.averagePeakScore : dayData.averageCrashRisk;
+    // Show day number and peak score if available
+    const score = dayData.averagePeakScore;
     
     return (
       <View style={styles.dayContent}>
@@ -242,8 +226,7 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
         let backgroundColor = Theme.colors.cardBg;
         
         if (dayData.hasData) {
-          const mode = dayScoreMode[dayData.date] || 'peak';
-          const score = mode === 'peak' ? dayData.averagePeakScore : dayData.averageCrashRisk;
+          const score = dayData.averagePeakScore;
           
           if (score !== undefined) {
             // Use score for color
@@ -255,18 +238,15 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
         }
 
         days.push(
-          <TouchableOpacity
+          <View
             key={day}
             style={[
               styles.dayCell,
-              { backgroundColor },
-              dayData.hasData && !dayData.isToday && styles.clickableDay
+              { backgroundColor }
             ]}
-            onPress={() => handleDayPress(dayData)}
-            disabled={!dayData.hasData || dayData.isToday}
           >
             {renderDayContent(dayData)}
-          </TouchableOpacity>
+          </View>
         );
       } else {
         days.push(
@@ -299,7 +279,6 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
         
         // Calculate average scores for the day
         let totalPeakScore = 0;
-        let totalCrashRisk = 0;
         let scoreCount = 0;
         
         // Sample scores throughout the day (every 2 hours)
@@ -307,23 +286,15 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           const sampleTime = new Date(yesterday);
           sampleTime.setHours(hour, 0, 0, 0);
           
-                     try {
-                         // Calculate CaffScore
+          try {
+            // Calculate CaffScore
             const focusResult = await CaffScoreService.calculateFocusScore(
-               userProfile,
-               yesterdayDrinks,
-               sampleTime
-             );
-             
-             // Calculate crash risk
-             const crashResult = await CrashRiskService.calculateCrashRisk(
-               userProfile,
-               yesterdayDrinks,
-               sampleTime
-             );
+              userProfile,
+              yesterdayDrinks,
+              sampleTime
+            );
             
             totalPeakScore += focusResult.score;
-            totalCrashRisk += crashResult.score;
             scoreCount++;
           } catch (error) {
             console.error('Error calculating scores for sample time:', error);
@@ -332,14 +303,12 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
         
         if (scoreCount > 0) {
           const averagePeakScore = totalPeakScore / scoreCount;
-          const averageCrashRisk = totalCrashRisk / scoreCount;
           const totalCaffeine = yesterdayDrinks.reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
           
           const dayScore: DayScoreRecord = {
             userId: userProfile.userId,
             date: yesterdayKey,
             averagePeakScore,
-            averageCrashRisk,
             totalCaffeine,
             createdAt: new Date()
           };
@@ -347,7 +316,6 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           await StorageService.addDayScore(dayScore);
           console.log('📊 Recorded daily scores for:', yesterdayKey, {
             averagePeakScore: Math.round(averagePeakScore),
-            averageCrashRisk: Math.round(averageCrashRisk),
             totalCaffeine
           });
           
@@ -435,7 +403,7 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           {/* Instructions */}
           <View style={styles.instructionsContainer}>
             <Text style={styles.instructionsText}>
-              Tap completed days to toggle between peak score and crash risk
+              Colors represent your daily CaffScore performance
             </Text>
           </View>
 
