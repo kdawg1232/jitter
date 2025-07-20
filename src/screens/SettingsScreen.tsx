@@ -63,12 +63,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       if (setupSuccessful) {
         setNotificationsEnabled(true);
         
+        // Show initial success message
+        Alert.alert(
+          'Your Jitter notifications are set up!',
+          '',
+          [{ text: 'OK' }]
+        );
+        
         // Test notification
         await NotificationService.scheduleCaffeineRisingNotification();
         
+        // Show final configuration message  
         Alert.alert(
-          'Notifications Enabled! 🎉',
-          'You\'ll now receive alerts when your caffeine levels are rising for optimal focus timing. Check your notifications!',
+          'Notifications are enabled!',
+          'You will now receive alerts based off of the amount of caffeine in your body!',
           [{ text: 'Great!' }]
         );
       } else {
@@ -301,8 +309,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </Text>
                     <Text style={styles.notificationSubtitle}>
                       {notificationsEnabled 
-                        ? 'alerts when caffeine levels rise' 
-                        : 'add to help you know when to drink coffee'
+                        ? 'alerts based on your caffeine levels' 
+                        : 'get alerts based on caffeine levels'
                       }
                     </Text>
                   </View>

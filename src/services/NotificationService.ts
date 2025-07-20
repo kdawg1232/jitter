@@ -183,14 +183,14 @@ export class NotificationService {
   }
 
   /**
-   * Schedule caffeine rising notification (immediate for testing)
+   * Schedule caffeine rising notification
    */
   static async scheduleCaffeineRisingNotification(): Promise<void> {
     try {
       const preferences = await this.getNotificationPreferences();
       
       if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
-        console.log('[NotificationService] ⚠️ Caffeine notifications disabled');
+        console.log('[NotificationService] ⚠️ Caffeine rising notifications disabled');
         return;
       }
 
@@ -199,10 +199,74 @@ export class NotificationService {
         'Your caffeine is starting to kick in. Perfect timing for focused work!',
         { type: 'caffeine_rising' }
       );
-
-      console.log('[NotificationService] ⏰ Caffeine rising notification sent');
     } catch (error) {
-      console.error('[NotificationService] ❌ Failed to schedule caffeine notification:', error);
+      console.error('[NotificationService] ❌ Failed to schedule caffeine rising notification:', error);
+    }
+  }
+
+  /**
+   * Schedule caffeine decreasing notification
+   */
+  static async scheduleCaffeineDecreasingNotification(): Promise<void> {
+    try {
+      const preferences = await this.getNotificationPreferences();
+      
+      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
+        console.log('[NotificationService] ⚠️ Caffeine decreasing notifications disabled');
+        return;
+      }
+
+      await this.scheduleLocalNotification(
+        'Caffeine Levels Decreasing 📉',
+        'Your caffeine effects are wearing off. Consider your next dose timing.',
+        { type: 'caffeine_decreasing' }
+      );
+    } catch (error) {
+      console.error('[NotificationService] ❌ Failed to schedule caffeine decreasing notification:', error);
+    }
+  }
+
+  /**
+   * Schedule caffeine zero notification
+   */
+  static async scheduleCaffeineZeroNotification(): Promise<void> {
+    try {
+      const preferences = await this.getNotificationPreferences();
+      
+      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
+        console.log('[NotificationService] ⚠️ Caffeine zero notifications disabled');
+        return;
+      }
+
+      await this.scheduleLocalNotification(
+        'Caffeine Levels Dropped to Zero! 💤',
+        'No active caffeine detected in your system. Ready for your next boost?',
+        { type: 'caffeine_zero' }
+      );
+    } catch (error) {
+      console.error('[NotificationService] ❌ Failed to schedule caffeine zero notification:', error);
+    }
+  }
+
+  /**
+   * Schedule peak caffeine notification
+   */
+  static async schedulePeakCaffeineNotification(): Promise<void> {
+    try {
+      const preferences = await this.getNotificationPreferences();
+      
+      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
+        console.log('[NotificationService] ⚠️ Peak caffeine notifications disabled');
+        return;
+      }
+
+      await this.scheduleLocalNotification(
+        'Peak Caffeine Effect! 🚀',
+        'You are in peak caffeine effect state! Optimal time for high-focus tasks.',
+        { type: 'peak_caffeine' }
+      );
+    } catch (error) {
+      console.error('[NotificationService] ❌ Failed to schedule peak caffeine notification:', error);
     }
   }
 
@@ -232,7 +296,7 @@ export class NotificationService {
       // Get cached token first
       const cachedToken = await AsyncStorage.getItem(this.PUSH_TOKEN_KEY);
       if (cachedToken) {
-        console.log('[NotificationService] 📱 Using cached push token');
+        console.log('[NotificationService] 📱 Using cached push token:', cachedToken);
         return cachedToken;
       }
 
@@ -254,7 +318,7 @@ export class NotificationService {
       // Cache the token
       await AsyncStorage.setItem(this.PUSH_TOKEN_KEY, token);
       
-      console.log('[NotificationService] ✅ Push token obtained:', token.substring(0, 20) + '...');
+      console.log('[NotificationService] ✅ Push token obtained:', token);
       
       // TODO: Send token to your backend server here
       // await sendTokenToServer(token);
@@ -300,6 +364,7 @@ export class NotificationService {
       // Store preferences
       await AsyncStorage.setItem(this.PREFERENCES_KEY, JSON.stringify({
         enabled: true,
+        caffeineRisingEnabled: true, // Enable caffeine notifications by default
         setupAt: new Date().toISOString(),
       }));
 

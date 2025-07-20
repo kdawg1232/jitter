@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   Modal,
+  AppState,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
@@ -58,6 +59,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [caffScore, setCaffScore] = useState(0); // CaffScore
   const [caffResult, setCaffResult] = useState<FocusResult | null>(null); // Full CaffScore result for status detection
   const [previousCaffScore, setPreviousCaffScore] = useState(0); // Track previous score to detect trends
+  const [previousCaffeineStatus, setPreviousCaffeineStatus] = useState<string>(""); // Track status changes for notifications
   
   // Sleep tracking state
   const [showSleepModal, setShowSleepModal] = useState(false);
@@ -345,32 +347,31 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }
   };
 
-  // Handle caffeine rising notification trigger
-  const handleCaffeineRisingNotification = async (isRising: boolean, hasVeryRecentDrink: boolean): Promise<void> => {
-    // Only trigger notification for the specific "caffeine levels rising" state
-    if (isRising && !hasVeryRecentDrink) {
-      try {
-        await NotificationService.scheduleCaffeineRisingNotification();
-      } catch (error) {
-        console.error('[HomeScreen] ❌ Failed to send caffeine rising notification:', error);
-      }
-    }
-  };
-
   // Get dynamic caffeine status message based on current state
   const getCaffeineStatus = (): string => {
     if (!caffResult || !userProfile || last24HoursDrinks.length === 0) {
-      return "No active caffeine detected";
+      const status = "No active caffeine detected";
+      
+      // Trigger notification if status changed
+      if (previousCaffeineStatus !== "" && previousCaffeineStatus !== status) {
+        NotificationService.scheduleCaffeineZeroNotification();
+      }
+      
+      // Update previous status
+      if (previousCaffeineStatus !== status) {
+        setPreviousCaffeineStatus(status);
+      }
+      
+      return status;
     }
 
     const { factors, currentCaffeineLevel } = caffResult;
     const { risingRate, currentLevel, absorption } = factors;
     
-    // Calculate actual score trend (more reliable than risingRate factor)
-    const scoreTrend = caffScore - previousCaffScore;
-    const isScoreRising = scoreTrend > 2; // Significant increase
-    const isScoreStable = Math.abs(scoreTrend) <= 2; // Relatively stable
-    const isScoreDecling = scoreTrend < -2; // Significant decrease
+    // Simple score comparison to determine caffeine state
+    const scoreDifference = caffScore - previousCaffScore;
+    const isScoreRising = scoreDifference > 0; // Current score higher than previous
+    const isScoreStable = scoreDifference === 0; // No change
     
     // Check for recent consumption (last 45 minutes)
     const now = new Date();
@@ -392,54 +393,79 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       absorption: absorption.toFixed(3),
       caffScore,
       previousCaffScore,
-      scoreTrend: scoreTrend.toFixed(1),
+      scoreDifference,
       isScoreRising,
       isScoreStable,
-      isScoreDecling,
       hasRecentDrink,
       hasVeryRecentDrink
     });
 
-    // Simplified logic based on score trends and recent consumption
+    let currentStatus = "";
+
+    // Logic based on actual CaffScore changes
     
     // 1. Score rising + very recent drink = being absorbed
     if (isScoreRising && hasVeryRecentDrink) {
-      return "Caffeine being absorbed";
+      currentStatus = "Caffeine being absorbed";
     }
-
     // 2. Score rising + no very recent drink = levels rising
-    if (isScoreRising && !hasVeryRecentDrink) {
-      // Trigger notification for caffeine rising state
-      handleCaffeineRisingNotification(isScoreRising, hasVeryRecentDrink);
-      return "Caffeine levels rising";
+    else if (isScoreRising && !hasVeryRecentDrink) {
+      currentStatus = "Caffeine levels rising";
     }
-
     // 3. High score + still rising = peak effect
-    if (caffScore > 80 && isScoreRising) {
-      return "Peak caffeine effect active";
+    else if (caffScore > 80 && isScoreRising) {
+      currentStatus = "Peak caffeine effect active";
     }
-
     // 4. Score declining = leaving system
-    if (isScoreDecling) {
-      return "Caffeine leaving your system";
+    else if (!isScoreRising && !isScoreStable && caffScore > 20) {
+      currentStatus = "Caffeine leaving your system";
     }
-
     // 5. Low score + declining = wearing off
-    if (caffScore < 20 && isScoreDecling) {
-      return "Effects wearing off";
+    else if (caffScore < 20 && !isScoreRising && !isScoreStable) {
+      currentStatus = "Effects wearing off";
     }
-
-    // 6. Zero score + no trend = no active caffeine
-    if (caffScore === 0 && !isScoreDecling && !isScoreRising) {
-      return "No active caffeine detected";
+    // 6. Zero score
+    else if (caffScore === 0) {
+      currentStatus = "No active caffeine detected";
     }
-
     // Default fallback
-    if (caffScore > 0) {
-      return "Caffeine leaving your system";
+    else if (caffScore > 0) {
+      currentStatus = "Caffeine is present in your system";
+    } else {
+      currentStatus = "No active caffeine detected";
     }
 
-    return "No active caffeine detected";
+    // Trigger notifications for state changes
+    if (previousCaffeineStatus !== "" && previousCaffeineStatus !== currentStatus) {
+      console.log('[HomeScreen] 🔔 Caffeine status changed:', {
+        from: previousCaffeineStatus,
+        to: currentStatus
+      });
+      
+      // Trigger appropriate notification based on new status
+      switch (currentStatus) {
+        case "Caffeine levels rising":
+          NotificationService.scheduleCaffeineRisingNotification();
+          break;
+        case "Peak caffeine effect active":
+          NotificationService.schedulePeakCaffeineNotification();
+          break;
+        case "Effects wearing off":
+          NotificationService.scheduleCaffeineDecreasingNotification();
+          break;
+        case "No active caffeine detected":
+          NotificationService.scheduleCaffeineZeroNotification();
+          break;
+        // No notifications for intermediate states like "being absorbed" or "leaving system"
+      }
+    }
+
+    // Update previous status
+    if (previousCaffeineStatus !== currentStatus) {
+      setPreviousCaffeineStatus(currentStatus);
+    }
+
+    return currentStatus;
   };
 
   // Update CaffScore when relevant data changes
@@ -454,6 +480,39 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       calculateCaffScore();
     }
   }, [userProfile, last24HoursDrinks]); // Sleep data retrieved internally by service
+
+  // Recalculate CaffScore when app returns from background
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'active' && userProfile) {
+        console.log('[HomeScreen] 📱 App returned to foreground, recalculating CaffScore');
+        calculateCaffScore();
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [userProfile]);
+
+  // Periodic CaffScore recalculation (every 5 minutes)
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const interval = setInterval(() => {
+      console.log('[HomeScreen] ⏰ Periodic CaffScore recalculation');
+      calculateCaffScore();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(interval);
+  }, [userProfile]);
+
+  // Recalculate CaffScore when HomeScreen component mounts
+  useEffect(() => {
+    if (userProfile) {
+      console.log('[HomeScreen] 🏠 HomeScreen mounted, recalculating CaffScore');
+      calculateCaffScore();
+    }
+  }, []); // Empty dependency array = runs once on mount
 
   // Get current score and color based on active view
   const getCurrentScore = () => {
