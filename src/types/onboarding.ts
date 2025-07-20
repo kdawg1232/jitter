@@ -20,6 +20,9 @@ export interface OnboardingData {
   lastNightSleep: number | null;
   trackSleepDaily: boolean;
   
+  // Widget & Notifications Setup (Screen 6)
+  notificationsEnabled: boolean;
+  
   // Completion tracking
   currentStep: number;
   isComplete: boolean;
@@ -46,6 +49,7 @@ export const initialOnboardingData: OnboardingData = {
   caffeineSource: null,
   lastNightSleep: null,
   trackSleepDaily: true,
+  notificationsEnabled: false,
   currentStep: 1,
   isComplete: false,
 };

@@ -7,6 +7,7 @@ import { OnboardingProfileScreen } from './OnboardingProfileScreen';
 import { OnboardingHealthScreen } from './OnboardingHealthScreen';
 import { OnboardingCaffeineScreen } from './OnboardingCaffeineScreen';
 import { OnboardingSleepScreen } from './OnboardingSleepScreen';
+import { SetupWidgetNotificationsScreen } from './SetupWidgetNotificationsScreen';
 import { OnboardingCompleteScreen } from './OnboardingCompleteScreen';
 
 interface OnboardingContainerProps {
@@ -25,7 +26,7 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
   const [onboardingData, setOnboardingData] = useState<OnboardingData>(
     initialData || initialOnboardingData
   );
-  const totalSteps = 6;
+  const totalSteps = 7;
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setOnboardingData(prev => ({ ...prev, ...updates }));
@@ -154,6 +155,8 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
       case 5:
         return <OnboardingSleepScreen {...commonProps} />;
       case 6:
+        return <SetupWidgetNotificationsScreen {...commonProps} />;
+      case 7:
         return (
           <OnboardingCompleteScreen 
             {...commonProps} 

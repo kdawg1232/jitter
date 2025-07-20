@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GetStartedScreen } from './src/screens';
 import { MainAppContainer } from './src/components';
 import { OnboardingContainer } from './src/screens/onboarding';
-import { StorageService, DeepLinkService } from './src/services';
+import { StorageService, DeepLinkService, NotificationService } from './src/services';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'getStarted' | 'onboarding' | 'main'>('getStarted');
@@ -44,10 +44,21 @@ export default function App() {
       // Initialize deep linking for widget integration
       await DeepLinkService.initialize();
       
+      // Initialize notification service
+      await NotificationService.initialize();
+      
       setIsLoading(false);
     };
 
     initializeApp();
+  }, []);
+
+  // Add notification listeners
+  useEffect(() => {
+    const removeNotificationListeners = NotificationService.addNotificationListeners();
+    
+    // Cleanup on unmount
+    return removeNotificationListeners;
   }, []);
 
   // Show loading screen while checking user profile

@@ -226,7 +226,7 @@ export class CaffScoreService {
 
   /**
    * Calculate current caffeine activity factor
-   * Uses distributed absorption model that accounts for sipping time
+   * Uses a simplified but reliable absorption model
    */
   private static calculateCurrentCaffeineActivity(
     drinks: DrinkRecord[], 
@@ -238,15 +238,36 @@ export class CaffScoreService {
     console.log('[CaffScoreService] 🔄 Current caffeine activity calculation for', drinks.length, 'drinks');
     
     drinks.forEach((drink, index) => {
-      // Use the sophisticated distributed absorption model from CrashRiskService
-      const contribution = CrashRiskService.calculateDrinkContribution(drink, halfLife, currentTime);
-      totalActiveEffect += contribution;
+      const hoursElapsed = (currentTime.getTime() - drink.timestamp.getTime()) / (1000 * 60 * 60);
       
-      console.log(`[CaffScoreService] ⚡ Drink ${index + 1} current activity:`, {
-        name: drink.name,
-        contribution: contribution.toFixed(1),
-        timeToConsume: drink.timeToConsume
-      });
+      if (hoursElapsed >= 0) {
+        // Use the same reliable calculation as currentCaffeineLevel
+        let contribution = drink.actualCaffeineConsumed * Math.pow(2, -hoursElapsed / halfLife);
+        
+        // Apply absorption factor based on time elapsed
+        if (hoursElapsed < 0.25) {
+          // Less than 15 minutes - early absorption phase
+          contribution *= 0.3 + (hoursElapsed / 0.25) * 0.4; // 30% to 70%
+        } else if (hoursElapsed < 1.0) {
+          // 15 minutes to 1 hour - peak absorption phase
+          contribution *= 0.7 + (hoursElapsed - 0.25) / 0.75 * 0.3; // 70% to 100%
+        } else if (hoursElapsed < 2.0) {
+          // 1 to 2 hours - full absorption
+          contribution *= 1.0;
+        } else {
+          // After 2 hours - full absorption but declining levels
+          contribution *= 1.0;
+        }
+        
+        totalActiveEffect += contribution;
+        
+        console.log(`[CaffScoreService] ⚡ Drink ${index + 1} current activity:`, {
+          name: drink.name,
+          hoursElapsed: hoursElapsed.toFixed(2),
+          contribution: contribution.toFixed(1),
+          timeToConsume: drink.timeToConsume
+        });
+      }
     });
     
     // Normalize against typical effective dose (200mg)

@@ -58,6 +58,7 @@ export const EditInputScreen: React.FC<EditInputScreenProps> = ({
       caffeineSource: null, // This might need to be stored in profile
       lastNightSleep: userProfile.averageSleep7Days,
       trackSleepDaily: true,
+      notificationsEnabled: false, // Will be checked from NotificationService if needed
       currentStep: 2, // Start from profile step since we skip welcome
       isComplete: false,
     };

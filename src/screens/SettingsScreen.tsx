@@ -9,9 +9,10 @@ import {
   Switch,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { Theme } from '../theme/colors';
-import { StorageService, WidgetService } from '../services';
+import { StorageService, WidgetService, NotificationService } from '../services';
 import { UserProfile } from '../types';
 
 interface SettingsScreenProps {
@@ -25,9 +26,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   useEffect(() => {
     loadUserProfile();
+    checkNotificationStatus();
   }, []);
 
   const loadUserProfile = async () => {
@@ -38,6 +41,84 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       console.error('Error loading user profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkNotificationStatus = async () => {
+    try {
+      const enabled = await NotificationService.areNotificationsEnabled();
+      setNotificationsEnabled(enabled);
+      console.log('[SettingsScreen] 📱 Notification status checked:', enabled);
+    } catch (error) {
+      console.error('Error checking notification status:', error);
+    }
+  };
+
+  const handleNotificationSetup = async () => {
+    try {
+      console.log('[SettingsScreen] 🔔 Starting notification setup...');
+      
+      const setupSuccessful = await NotificationService.setupNotifications();
+      
+      if (setupSuccessful) {
+        setNotificationsEnabled(true);
+        
+        // Test notification
+        await NotificationService.scheduleCaffeineRisingNotification();
+        
+        Alert.alert(
+          'Notifications Enabled! 🎉',
+          'You\'ll now receive alerts when your caffeine levels are rising for optimal focus timing. Check your notifications!',
+          [{ text: 'Great!' }]
+        );
+      } else {
+        Alert.alert(
+          'Permission Required',
+          'To receive caffeine level notifications, please enable notifications in your device settings.\n\nGo to Settings > Jitter > Notifications',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => {
+              // On iOS, this opens the app's settings page
+              if (Platform.OS === 'ios') {
+                Linking.openURL('app-settings:');
+              }
+            }}
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('[SettingsScreen] ❌ Error setting up notifications:', error);
+      Alert.alert(
+        'Setup Error',
+        'There was an error setting up notifications. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleNotificationDisable = async () => {
+    try {
+      console.log('[SettingsScreen] 🔇 Disabling notifications...');
+      
+      Alert.alert(
+        'Disable Notifications?',
+        'You won\'t receive alerts when your caffeine levels are rising. You can re-enable this anytime.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Disable', style: 'destructive', onPress: async () => {
+            await NotificationService.disableNotifications();
+            setNotificationsEnabled(false);
+            console.log('[SettingsScreen] ✅ Notifications disabled');
+          }}
+        ]
+      );
+    } catch (error) {
+      console.error('[SettingsScreen] ❌ Error disabling notifications:', error);
+      Alert.alert(
+        'Error',
+        'There was an error disabling notifications. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -182,7 +263,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <View style={styles.widgetIndicator} />
                 <Text style={styles.widgetIcon}>📱</Text>
                 <View>
-                  <Text style={styles.widgetTitle}>widget not set up</Text>
+                  <Text style={styles.widgetTitle}>set up widget</Text>
                   <Text style={styles.widgetSubtitle}>
                     add to home screen for{'\n'}quick brain health checks
                   </Text>
@@ -192,6 +273,60 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <Text style={styles.setupButtonText}>set up</Text>
               </View>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Notifications Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>notifications</Text>
+          <View style={styles.card}>
+            <View style={[
+              styles.notificationRow,
+              notificationsEnabled && styles.notificationRowEnabled
+            ]}>
+              <TouchableOpacity 
+                style={styles.notificationContent} 
+                onPress={notificationsEnabled ? undefined : handleNotificationSetup}
+                disabled={notificationsEnabled}
+              >
+                <View style={styles.notificationLeft}>
+                  <View style={[
+                    styles.notificationIndicator, 
+                    notificationsEnabled && styles.notificationIndicatorEnabled
+                  ]} />
+                  <Text style={styles.notificationIcon}>📱</Text>
+                  <View>
+                    <Text style={styles.notificationTitle}>
+                      {notificationsEnabled ? 'notifications are set up!' : 'set up notifications'}
+                    </Text>
+                    <Text style={styles.notificationSubtitle}>
+                      {notificationsEnabled 
+                        ? 'alerts when caffeine levels rise' 
+                        : 'add to help you know when to drink coffee'
+                      }
+                    </Text>
+                  </View>
+                </View>
+                {!notificationsEnabled && (
+                  <View style={styles.enableButton}>
+                    <Text style={styles.enableButtonText}>enable</Text>
+                  </View>
+                )}
+                {notificationsEnabled && (
+                  <View style={styles.enabledIndicator}>
+                    <Text style={styles.enabledText}>✓</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {notificationsEnabled && (
+                <TouchableOpacity 
+                  style={styles.disableButton}
+                  onPress={handleNotificationDisable}
+                >
+                  <Text style={styles.disableButtonText}>disable</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         </View>
 
@@ -382,6 +517,85 @@ const styles = StyleSheet.create({
     ...Theme.fonts.button,
     color: Theme.colors.white,
     fontSize: 15,
+  },
+  notificationRow: {
+    flexDirection: 'column',
+  },
+  notificationRowEnabled: {
+    backgroundColor: Theme.colors.primaryGreen + '10', // Light green background
+  },
+  notificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Theme.spacing.md,
+  },
+  notificationLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  notificationIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Theme.colors.accentRed,
+    marginRight: Theme.spacing.sm,
+  },
+  notificationIndicatorEnabled: {
+    backgroundColor: Theme.colors.primaryGreen,
+  },
+  notificationIcon: {
+    fontSize: 24,
+    marginRight: Theme.spacing.md,
+  },
+  notificationTitle: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginBottom: 2,
+  },
+  notificationSubtitle: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 13,
+  },
+  enableButton: {
+    backgroundColor: Theme.colors.primaryBlue,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.medium,
+  },
+  enableButtonText: {
+    ...Theme.fonts.button,
+    color: Theme.colors.white,
+    fontSize: 15,
+  },
+  enabledIndicator: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Theme.colors.primaryGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  enabledText: {
+    color: Theme.colors.white,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  disableButton: {
+    backgroundColor: Theme.colors.accentRed,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.medium,
+    alignSelf: 'center',
+    marginTop: Theme.spacing.sm,
+    marginBottom: Theme.spacing.sm,
+  },
+  disableButtonText: {
+    ...Theme.fonts.button,
+    color: Theme.colors.white,
+    fontSize: 13,
   },
   settingRow: {
     flexDirection: 'row',
