@@ -93,11 +93,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       const profile = await StorageService.getUserProfile();
       setUserProfile(profile);
       
-      // Load last night's sleep
+      // Load last night's sleep and previous CaffScore
       if (profile) {
         const sleepData = await StorageService.getLastNightSleep(profile.userId);
         setLastNightSleep(sleepData || 7.5);
         console.log('[HomeScreen] 😴 Last night sleep loaded:', sleepData || 7.5, 'hours');
+        
+        // Load previous CaffScore for comparison
+        const prevScore = await StorageService.getPreviousCaffScore(profile.userId);
+        setPreviousCaffScore(prevScore);
+        console.log('[HomeScreen] 📊 Previous CaffScore loaded:', prevScore);
       }
       
       // Load today's drinks and last 24 hours drinks
@@ -239,16 +244,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
 
       console.log('[HomeScreen] ✅ CaffScore calculated:', result.score);
       
-      // Track previous score for trend detection  
-      const previousScore = caffScore;
+      // Use the loaded previous score from storage for comparison
+      const loadedPreviousScore = previousCaffScore;
       const newScore = result.score;
       
-      setPreviousCaffScore(previousScore);
+      console.log('[HomeScreen] 📊 Score comparison:', {
+        loadedPreviousScore,
+        newScore,
+        difference: (newScore - loadedPreviousScore).toFixed(3)
+      });
+      
       setCaffScore(newScore);
       setCaffResult(result);
       
-      // Calculate status immediately with correct values
-      const status = calculateCaffeineStatusDirect(result, newScore, previousScore);
+      // Persist current score as previous score for next app session
+      await StorageService.savePreviousCaffScore(userProfile.userId, newScore);
+      
+      // Update previous score state for next calculation
+      setPreviousCaffScore(newScore);
+      
+      // Calculate status with correct previous score from storage
+      const status = calculateCaffeineStatusDirect(result, newScore, loadedPreviousScore);
       setCurrentCaffeineStatus(status);
     } catch (error) {
       console.error('[HomeScreen] ❌ Error calculating CaffScore:', error);
@@ -257,88 +273,157 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }
   };
 
-  // Calculate dynamic caffeine status based on current state
+  // Calculate dynamic caffeine status based on CaffScore range + trend (simplified approach)
   const calculateCaffeineStatus = (): string => {
-    if (!caffResult || !userProfile || last24HoursDrinks.length === 0) {
-      return "No active caffeine detected";
-    }
+    // Factor 1: CaffScore range
+    const scoreRange = caffScore === 0 ? 'none' : 
+                      caffScore < 25 ? 'low' : 
+                      caffScore < 80 ? 'medium' : 'high';
 
-    // Simple score comparison to determine caffeine state
+    // Factor 2: CaffScore trend - only update if score actually changed
     const scoreDifference = caffScore - previousCaffScore;
-    const isScoreRising = scoreDifference > 0;
-    const isScoreStable = scoreDifference === 0;
     
-    // Check for recent consumption (last 45 minutes)
-    const now = new Date();
-    const recentThreshold = 45 * 60 * 1000;
-    const hasRecentDrink = last24HoursDrinks.some(drink => 
-      (now.getTime() - drink.timestamp.getTime()) < recentThreshold
-    );
-
-    // Check for very recent consumption (last 15 minutes)
-    const veryRecentThreshold = 15 * 60 * 1000;
-    const hasVeryRecentDrink = last24HoursDrinks.some(drink => 
-      (now.getTime() - drink.timestamp.getTime()) < veryRecentThreshold
-    );
-
-    // Logic based on actual CaffScore changes
-    if (isScoreRising && hasVeryRecentDrink) {
-      return "Caffeine being absorbed";
-    } else if (isScoreRising && !hasVeryRecentDrink) {
-      return "Caffeine levels rising";
-    } else if (caffScore > 80 && isScoreRising) {
-      return "Peak caffeine effect active";
-    } else if (!isScoreRising && !isScoreStable && caffScore > 20) {
-      return "Caffeine leaving your system";
-    } else if (caffScore < 20 && !isScoreRising && !isScoreStable) {
-      return "Effects wearing off";
-    } else if (caffScore === 0) {
-      return "No active caffeine detected";
-    } else if (caffScore > 0) {
-      return "Caffeine is present in your system";
-    } else {
-      return "No active caffeine detected";
+    // If score hasn't changed, keep the previous state
+    if (scoreDifference === 0) {
+      console.log('[HomeScreen] 🎯 Score unchanged, keeping previous state:', {
+        currentScore: caffScore,
+        previousScore: previousCaffScore,
+        currentStatus: currentCaffeineStatus
+      });
+      return currentCaffeineStatus;
     }
+
+    const trend = scoreDifference > 0 ? 'rising' : 'declining';
+
+    console.log('[HomeScreen] 🎯 Status calculation factors:', {
+      currentScore: caffScore,
+      previousScore: previousCaffScore,
+      scoreDifference: scoreDifference.toFixed(3),
+      scoreRange,
+      trend
+    });
+
+    let finalStatus: string;
+    let triggerReason: string;
+
+    // Map range + trend to the 6 states
+    if (scoreRange === 'none') {
+      finalStatus = "No active caffeine detected";
+      triggerReason = "Score = 0";
+    } else if (scoreRange === 'low' && trend === 'declining') {
+      finalStatus = "Effects wearing off";
+      triggerReason = "Low score + declining";
+    } else if (scoreRange === 'medium' && trend === 'declining') {
+      finalStatus = "Caffeine leaving your system";
+      triggerReason = "Medium score + declining";
+    } else if (scoreRange === 'high' && trend === 'declining') {
+      finalStatus = "Caffeine leaving your system";
+      triggerReason = "High score + declining";
+    } else if (scoreRange === 'low' && trend === 'rising') {
+      finalStatus = "Caffeine being absorbed";
+      triggerReason = "Low score + rising";
+    } else if (scoreRange === 'medium' && trend === 'rising') {
+      finalStatus = "Caffeine levels rising";
+      triggerReason = "Medium score + rising";
+    } else if (scoreRange === 'high' && trend === 'rising') {
+      finalStatus = "Peak caffeine effect active";
+      triggerReason = "High score + rising";
+    } else {
+      // Fallback (shouldn't happen with simplified logic)
+      finalStatus = "Caffeine is present in your system";
+      triggerReason = `${scoreRange} score + ${trend}`;
+    }
+
+    console.log('[HomeScreen] 🎯 Status determination (range + trend):', {
+      finalStatus,
+      triggerReason,
+      scoreRange,
+      trend
+    });
+
+    return finalStatus;
   };
 
-  // Calculate status with direct values (for immediate updates)
+  // Calculate status with direct values (for immediate updates) - range + trend approach
   const calculateCaffeineStatusDirect = (result: FocusResult, currentScore: number, prevScore: number): string => {
-    if (!result || !userProfile || last24HoursDrinks.length === 0) {
-      return "No active caffeine detected";
-    }
+    // Factor 1: CaffScore range
+    const scoreRange = currentScore === 0 ? 'none' : 
+                      currentScore < 25 ? 'low' : 
+                      currentScore < 80 ? 'medium' : 'high';
 
+    // Factor 2: CaffScore trend - only update if score actually changed
     const scoreDifference = currentScore - prevScore;
-    const isScoreRising = scoreDifference > 0;
-    const isScoreStable = scoreDifference === 0;
     
-    const now = new Date();
-    const recentThreshold = 45 * 60 * 1000;
-    const hasRecentDrink = last24HoursDrinks.some(drink => 
-      (now.getTime() - drink.timestamp.getTime()) < recentThreshold
-    );
-
-    const veryRecentThreshold = 15 * 60 * 1000;
-    const hasVeryRecentDrink = last24HoursDrinks.some(drink => 
-      (now.getTime() - drink.timestamp.getTime()) < veryRecentThreshold
-    );
-
-    if (isScoreRising && hasVeryRecentDrink) {
-      return "Caffeine being absorbed";
-    } else if (isScoreRising && !hasVeryRecentDrink) {
-      return "Caffeine levels rising";
-    } else if (currentScore > 80 && isScoreRising) {
-      return "Peak caffeine effect active";
-    } else if (!isScoreRising && !isScoreStable && currentScore > 20) {
-      return "Caffeine leaving your system";
-    } else if (currentScore < 20 && !isScoreRising && !isScoreStable) {
-      return "Effects wearing off";
-    } else if (currentScore === 0) {
-      return "No active caffeine detected";
-    } else if (currentScore > 0) {
-      return "Caffeine is present in your system";
-    } else {
-      return "No active caffeine detected";
+    // If score hasn't changed, return stable status based on current range
+    if (scoreDifference === 0) {
+      console.log('[HomeScreen] 🎯 Score unchanged in DIRECT calculation:', {
+        currentScore,
+        prevScore,
+        scoreRange,
+        action: 'keeping stable status based on range'
+      });
+      
+      // Return appropriate status based on current score range
+      if (scoreRange === 'none') {
+        return "No active caffeine detected";
+      } else if (scoreRange === 'low') {
+        return "Caffeine is present in your system";
+      } else if (scoreRange === 'medium') {
+        return "Caffeine is present in your system"; 
+      } else { // high
+        return "Peak caffeine effect active";
+      }
     }
+
+    const trend = scoreDifference > 0 ? 'rising' : 'declining';
+
+    console.log('[HomeScreen] 🎯 Status calculation factors DIRECT:', {
+      currentScore,
+      prevScore,
+      scoreDifference: scoreDifference.toFixed(3),
+      scoreRange,
+      trend
+    });
+
+    let finalStatus: string;
+    let triggerReason: string;
+
+    // Map range + trend to the 6 states
+    if (scoreRange === 'none') {
+      finalStatus = "No active caffeine detected";
+      triggerReason = "Score = 0";
+    } else if (scoreRange === 'low' && trend === 'declining') {
+      finalStatus = "Effects wearing off";
+      triggerReason = "Low score + declining";
+    } else if (scoreRange === 'medium' && trend === 'declining') {
+      finalStatus = "Caffeine leaving your system";
+      triggerReason = "Medium score + declining";
+    } else if (scoreRange === 'high' && trend === 'declining') {
+      finalStatus = "Caffeine leaving your system";
+      triggerReason = "High score + declining";
+    } else if (scoreRange === 'low' && trend === 'rising') {
+      finalStatus = "Caffeine being absorbed";
+      triggerReason = "Low score + rising";
+    } else if (scoreRange === 'medium' && trend === 'rising') {
+      finalStatus = "Caffeine levels rising";
+      triggerReason = "Medium score + rising";
+    } else if (scoreRange === 'high' && trend === 'rising') {
+      finalStatus = "Peak caffeine effect active";
+      triggerReason = "High score + rising";
+    } else {
+      // Fallback (shouldn't happen with simplified logic)
+      finalStatus = "Caffeine is present in your system";
+      triggerReason = `${scoreRange} score + ${trend}`;
+    }
+
+    console.log('[HomeScreen] 🎯 Status determination DIRECT (range + trend):', {
+      finalStatus,
+      triggerReason,
+      scoreRange,
+      trend
+    });
+
+    return finalStatus;
   };
 
   // Update CaffScore when relevant data changes
@@ -363,11 +448,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         console.log('[HomeScreen] 📱 App returned to foreground, reloading data');
         setIsAppReturningFromBackground(true);
         
-        // Reload drinks data first, then recalculate
+        // Reload drinks data and previous score, then recalculate
         const todaysDrinksData = await StorageService.getDrinksToday(userProfile.userId);
         const last24HoursData = await StorageService.getDrinksLast24Hours(userProfile.userId);
+        const prevScore = await StorageService.getPreviousCaffScore(userProfile.userId);
+        
         setTodaysDrinks(todaysDrinksData);
         setLast24HoursDrinks(last24HoursData);
+        setPreviousCaffScore(prevScore);
         
         // Update totals
         const newTotal = calculateTotalCaffeine(todaysDrinksData);
@@ -375,7 +463,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         
         console.log('[HomeScreen] ✅ Data reloaded from background:', {
           todaysDrinks: todaysDrinksData.length,
-          last24HoursDrinks: last24HoursData.length
+          last24HoursDrinks: last24HoursData.length,
+          previousScoreLoaded: prevScore
         });
         
         // Ensure data loaded flag is set
@@ -488,7 +577,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
           notificationTriggered = true;
           break;
         case "Effects wearing off":
-          console.log('[HomeScreen] 📉 Triggering decreasing notification');
+        case "Caffeine leaving your system":
+          console.log('[HomeScreen] 📉 Triggering declining notification');
           NotificationService.scheduleCaffeineDecreasingNotification();
           notificationTriggered = true;
           break;
@@ -934,6 +1024,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         return Theme.colors.accentRed; // Red
       case "No active caffeine detected":
         return '#000000'; // Black
+      case "Caffeine is present in your system":
+        return '#666666'; // Gray for fallback
       default:
         return '#666666'; // Gray fallback
     }

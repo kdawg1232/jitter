@@ -93,7 +93,8 @@ export const STORAGE_KEYS = {
   STREAK_DATA: 'jitter_streak_data',
   FOCUS_SESSIONS: 'jitter_focus_sessions',
   CAFFEINE_PLANS: 'jitter_caffeine_plans',
-  PLANNING_PREFERENCES: 'jitter_planning_preferences'
+  PLANNING_PREFERENCES: 'jitter_planning_preferences',
+  PREVIOUS_CAFF_SCORE: 'jitter_previous_caff_score'
 } as const;
 
 // Validation Types

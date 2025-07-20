@@ -1070,6 +1070,53 @@ export class StorageService {
     }
   }
 
+  // Previous CaffScore Operations
+  static async savePreviousCaffScore(userId: string, score: number): Promise<void> {
+    try {
+      const data = {
+        userId,
+        score,
+        savedAt: new Date().toISOString()
+      };
+      await AsyncStorage.setItem(STORAGE_KEYS.PREVIOUS_CAFF_SCORE, JSON.stringify(data));
+      console.log('[StorageService] ✅ Previous CaffScore saved:', {
+        userId,
+        score,
+        savedAt: data.savedAt
+      });
+    } catch (error) {
+      console.error('[StorageService] ❌ Error saving previous CaffScore:', error);
+      throw error;
+    }
+  }
+
+  static async getPreviousCaffScore(userId: string): Promise<number> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.PREVIOUS_CAFF_SCORE);
+      if (!data) {
+        console.log('[StorageService] ⚠️ No previous CaffScore found, returning 0');
+        return 0;
+      }
+      
+      const parsed = JSON.parse(data);
+      if (parsed.userId !== userId) {
+        console.log('[StorageService] ⚠️ Previous CaffScore is for different user, returning 0');
+        return 0;
+      }
+      
+      console.log('[StorageService] ✅ Previous CaffScore loaded:', {
+        userId: parsed.userId,
+        score: parsed.score,
+        savedAt: parsed.savedAt
+      });
+      
+      return parsed.score || 0;
+    } catch (error) {
+      console.error('[StorageService] ❌ Error loading previous CaffScore:', error);
+      return 0;
+    }
+  }
+
   // Utility Operations
   static async clearAllData(): Promise<void> {
     try {
@@ -1081,7 +1128,8 @@ export class StorageService {
         AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA),
         AsyncStorage.removeItem(STORAGE_KEYS.FOCUS_SESSIONS),
         AsyncStorage.removeItem(STORAGE_KEYS.CAFFEINE_PLANS),
-        AsyncStorage.removeItem(STORAGE_KEYS.PLANNING_PREFERENCES)
+        AsyncStorage.removeItem(STORAGE_KEYS.PLANNING_PREFERENCES),
+        AsyncStorage.removeItem(STORAGE_KEYS.PREVIOUS_CAFF_SCORE)
       ]);
     } catch (error) {
       console.error('Error clearing all data:', error);
