@@ -219,49 +219,93 @@ export class NotificationService {
   }
 
   /**
-   * Get stored push token
+   * Get or create push token for remote notifications
    */
-  static async getStoredPushToken(): Promise<string | null> {
+  static async getPushToken(): Promise<string | null> {
     try {
-      return await AsyncStorage.getItem(this.PUSH_TOKEN_KEY);
+      // Check if device supports push notifications
+      if (!Device.isDevice) {
+        console.log('[NotificationService] ⚠️ Push notifications only work on physical devices');
+        return null;
+      }
+
+      // Get cached token first
+      const cachedToken = await AsyncStorage.getItem(this.PUSH_TOKEN_KEY);
+      if (cachedToken) {
+        console.log('[NotificationService] 📱 Using cached push token');
+        return cachedToken;
+      }
+
+      // Get project ID from Constants
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+      
+      if (!projectId) {
+        console.error('[NotificationService] ❌ No project ID found. Make sure EAS is configured properly.');
+        return null;
+      }
+
+      console.log('[NotificationService] 🔄 Requesting new push token...');
+      const pushTokenData = await Notifications.getExpoPushTokenAsync({
+        projectId,
+      });
+
+      const token = pushTokenData.data;
+      
+      // Cache the token
+      await AsyncStorage.setItem(this.PUSH_TOKEN_KEY, token);
+      
+      console.log('[NotificationService] ✅ Push token obtained:', token.substring(0, 20) + '...');
+      
+      // TODO: Send token to your backend server here
+      // await sendTokenToServer(token);
+      
+      return token;
     } catch (error) {
-      console.error('[NotificationService] ❌ Error getting stored push token:', error);
+      console.error('[NotificationService] ❌ Failed to get push token:', error);
       return null;
     }
   }
 
   /**
-   * Setup notifications (request permissions and register for push notifications)
+   * Initialize notification service
    */
   static async setupNotifications(): Promise<boolean> {
-    console.log('[NotificationService] 🔧 Setting up notifications...');
-    
     try {
-      if (!Device.isDevice) {
-        console.log('[NotificationService] ⚠️ Must use physical device for notifications');
+      console.log('[NotificationService] 🚀 Setting up notifications...');
+
+      // Request permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.log('[NotificationService] ❌ Notification permission denied');
         return false;
       }
 
-      const permissionGranted = await this.requestPermissions();
-      
-      if (permissionGranted) {
-        // Try to register for push notifications
-        const pushToken = await this.registerForPushNotifications();
-        
-        await this.updateNotificationPreferences({
-          enabled: true,
-          caffeineRisingEnabled: true,
-          pushToken: pushToken,
-        });
-        
-        console.log('[NotificationService] ✅ Notifications setup successfully');
-        return true;
+      console.log('[NotificationService] ✅ Notification permissions granted');
+
+      // Get push token for production
+      const pushToken = await this.getPushToken();
+      if (pushToken) {
+        console.log('[NotificationService] 📱 Push token ready for production');
       } else {
-        console.log('[NotificationService] ❌ Notifications setup failed - permissions denied');
-        return false;
+        console.log('[NotificationService] ⚠️ Could not obtain push token (may not be needed for local notifications)');
       }
+
+      // Store preferences
+      await AsyncStorage.setItem(this.PREFERENCES_KEY, JSON.stringify({
+        enabled: true,
+        setupAt: new Date().toISOString(),
+      }));
+
+      return true;
     } catch (error) {
-      console.error('[NotificationService] ❌ Failed to setup notifications:', error);
+      console.error('[NotificationService] ❌ Setup failed:', error);
       return false;
     }
   }
