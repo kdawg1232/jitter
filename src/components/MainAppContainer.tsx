@@ -3,7 +3,6 @@ import { View, StyleSheet } from 'react-native';
 import { BottomNavigation, TabType } from './BottomNavigation';
 import { HomeScreen } from '../screens/HomeScreen';
 import { StatsScreen } from '../screens/StatsScreen';
-import { PlanScreen } from '../screens/PlanScreen';
 import { WinningsScreen } from '../screens/WinningsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { EditInputScreen } from '../screens/EditInputScreen';
@@ -133,8 +132,11 @@ export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCle
         return <HomeScreen onProfileCleared={onProfileCleared} />;
       case 'stats':
         return <StatsScreen refreshTrigger={statsRefreshTrigger} />;
-      case 'planning':
-        return <PlanScreen />;
+      case 'planning': {
+        // Import PlanScreen dynamically to avoid circular dependency
+        const { PlanScreen } = require('../screens/PlanScreen') as { PlanScreen: React.ComponentType };
+        return React.createElement(PlanScreen, {});
+      }
       case 'winnings':
         return <WinningsScreen />;
       case 'settings':

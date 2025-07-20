@@ -24,7 +24,7 @@ import {
   PlanningService,
   CrashRiskService 
 } from '../services';
-import { CaffeineTimeline, TimePicker } from '../components';
+import { TimePicker } from '../components';
 
 const { width } = Dimensions.get('window');
 
@@ -97,19 +97,25 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
         setSelectedBedtime(prefs.targetBedtime);
       }
 
-      // Generate plan if we have sessions and no existing plan
-      if (sessions.length > 0 && !plan) {
-        await generateTodaysPlan(sessions, profile, prefs || {
-          ...PlanningService.DEFAULT_PREFERENCES,
-          userId: profile.userId,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+      const currentPrefs = prefs || {
+        ...PlanningService.DEFAULT_PREFERENCES,
+        userId: profile.userId,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // Always generate guidance - either full plan with sessions or basic guidance
+      if (sessions.length > 0) {
+        // Generate full plan with sessions
+        await generateTodaysPlan(sessions, profile, currentPrefs);
       } else if (plan) {
-        // Load existing plan data
+        // Load existing plan data and add basic guidance
         const result = await generateCurveFromPlan(plan, profile);
         setPlanningResult(result);
         setCaffeineCurve(result.caffeineCurve);
+      } else {
+        // Generate basic guidance with just bedtime
+        await generateBasicGuidance(currentPrefs);
       }
 
     } catch (error) {
@@ -194,7 +200,7 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
   };
 
   const saveBedtime = async (newBedtime: string) => {
-    if (!preferences) return;
+    if (!preferences || !userProfile) return;
     
     try {
       const updatedPreferences = {
@@ -206,8 +212,88 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
       await StorageService.savePlanningPreferences(updatedPreferences);
       setPreferences(updatedPreferences);
       setSelectedBedtime(newBedtime);
+
+      // Regenerate plan with new bedtime
+      if (focusSessions.length > 0) {
+        await generateTodaysPlan(focusSessions, userProfile, updatedPreferences);
+      } else {
+        // Generate basic guidance even without sessions
+        await generateBasicGuidance(updatedPreferences);
+      }
     } catch (error) {
       console.error('Error saving bedtime:', error);
+    }
+  };
+
+  const generateBasicGuidance = async (prefs: PlanningPreferences) => {
+    if (!userProfile) return;
+
+    try {
+      // Parse bedtime
+      const bedtime = new Date();
+      const [time, period] = selectedBedtime.split(' ');
+      const [hours, minutes] = time.split(':');
+      let bedtimeHours = parseInt(hours);
+      
+      if (period === 'PM' && bedtimeHours !== 12) {
+        bedtimeHours += 12;
+      } else if (period === 'AM' && bedtimeHours === 12) {
+        bedtimeHours = 0;
+      }
+      bedtime.setHours(bedtimeHours, parseInt(minutes), 0, 0);
+
+      // Calculate latest safe caffeine time
+      const latestSafeCaffeineTime = PlanningService.calculateLatestSafeCaffeineTime(
+        bedtime,
+        userProfile,
+        prefs.sleepBufferHours
+      );
+
+      // Generate basic suggestions that always show
+      const suggestions = [
+        `💡 Latest safe caffeine time: ${latestSafeCaffeineTime.toLocaleTimeString()} (to avoid sleep disruption)`,
+        `💡 Recommended dose range: ${prefs.preferredDoseMgMin}-${prefs.preferredDoseMgMax}mg per drink`,
+        `💡 Space drinks at least 2-3 hours apart for optimal effectiveness`,
+        `💡 Add focus sessions above to get personalized caffeine timing recommendations`
+      ];
+
+      // If there are existing drinks today, add guidance about them
+      const today = new Date().toISOString().split('T')[0];
+      const todaysDrinks = await StorageService.getDrinksForDate(userProfile.userId, today);
+      
+      if (todaysDrinks.length > 0) {
+        const totalCaffeine = todaysDrinks.reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
+        suggestions.push(`💡 Today's caffeine so far: ${Math.round(totalCaffeine)}mg`);
+        
+        if (totalCaffeine > 300) {
+          suggestions.push(`💡 Consider lighter doses for remaining drinks (already at ${Math.round(totalCaffeine)}mg)`);
+        }
+      }
+
+      // Create a basic planning result
+      const basicResult: PlanningResult = {
+        plan: {
+          id: `basic_${userProfile.userId}_${today}`,
+          userId: userProfile.userId,
+          planDate: today,
+          bedtime,
+          sessions: [],
+          recommendations: [],
+          latestSafeCaffeineTime,
+          totalPlannedCaffeine: 0,
+          generatedAt: new Date(),
+          lastUpdatedAt: new Date()
+        },
+        caffeineCurve: [],
+        warnings: [],
+        suggestions,
+        conflictResolutions: []
+      };
+
+      setPlanningResult(basicResult);
+      
+    } catch (error) {
+      console.error('Error generating basic guidance:', error);
     }
   };
 
@@ -574,6 +660,21 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
           )}
         </View>
 
+        {/* Caffeine Timeline Suggestions */}
+        {planningResult && planningResult.suggestions.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>caffeine timeline suggestions</Text>
+            
+            <View style={styles.suggestionsContainer}>
+              {planningResult.suggestions.map((suggestion, index) => (
+                <View key={index} style={styles.suggestionItem}>
+                  <Text style={styles.suggestionText}>{suggestion}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Caffeine Plan */}
         {planningResult && planningResult.plan.recommendations.length > 0 && (
           <View style={styles.section}>
@@ -597,14 +698,24 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
               </View>
             )}
             
-            {/* Unified Plan */}
+            {/* Smart Caffeine Plan */}
             <View style={styles.planCard}>
               {planningResult.plan.recommendations.map((rec, index) => (
                 <View key={rec.id}>
                   <View style={styles.drinkHeader}>
-                    <Text style={styles.drinkNumber}>
-                      {index === 0 ? 'first drink:' : index === 1 ? 'second drink:' : `drink ${index + 1}:`}
-                    </Text>
+                    <View style={styles.drinkHeaderLeft}>
+                      <Text style={styles.drinkNumber}>
+                        {index === 0 ? 'first drink:' : index === 1 ? 'second drink:' : `drink ${index + 1}:`}
+                      </Text>
+                      {rec.confidence < 0.8 && (
+                        <Text style={styles.compromiseIndicator}>⚠️ adjusted</Text>
+                      )}
+                    </View>
+                    {rec.status !== 'pending' && (
+                      <Text style={styles.statusIndicator}>
+                        {rec.status === 'consumed' ? '✅' : rec.status === 'adjusted' ? '🔄' : '⏭️'}
+                      </Text>
+                    )}
                   </View>
                   <View style={styles.drinkDetails}>
                     <View style={styles.drinkTimeRow}>
@@ -612,6 +723,9 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
                       <Text style={styles.drinkDose}>{rec.doseMg} mg</Text>
                     </View>
                     <Text style={styles.drinkDuration}>sip over {rec.sippingWindowMinutes} minutes</Text>
+                    {rec.reasoning && (
+                      <Text style={styles.drinkReasoning}>{rec.reasoning}</Text>
+                    )}
                   </View>
                   {index < planningResult.plan.recommendations.length - 1 && (
                     <View style={styles.drinkSeparator} />
@@ -628,25 +742,7 @@ export const PlanScreen: React.FC<PlanScreenProps> = () => {
           </View>
         )}
 
-        {/* Advanced Timeline Visualization */}
-        {caffeineCurve.length > 0 && planningResult && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>caffeine timeline</Text>
-            <CaffeineTimeline
-              caffeineCurve={caffeineCurve}
-              focusSessions={focusSessions}
-              recommendations={planningResult.plan.recommendations}
-              bedtime={planningResult.plan.bedtime}
-              latestSafeCaffeineTime={planningResult.plan.latestSafeCaffeineTime}
-              onRecommendationPress={(rec) => {
-                Alert.alert(
-                  'Caffeine Recommendation',
-                  `${rec.doseMg}mg at ${formatTime(rec.recommendedTime)}\n\n${rec.reasoning}\n\nSip over ${rec.sippingWindowMinutes} minutes for optimal absorption.`
-                );
-              }}
-            />
-          </View>
-        )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -1131,5 +1227,37 @@ const styles = StyleSheet.create({
      justifyContent: 'center',
      gap: Theme.spacing.md,
      marginTop: Theme.spacing.lg,
+   },
+   // Enhanced plan display styles
+   drinkHeaderLeft: {
+     flexDirection: 'row',
+     alignItems: 'center',
+     flex: 1,
+   },
+   compromiseIndicator: {
+     ...Theme.fonts.caption,
+     color: '#FF6B35',
+     marginLeft: Theme.spacing.xs,
+     fontSize: 10,
+   },
+   statusIndicator: {
+     fontSize: 16,
+   },
+   drinkReasoning: {
+     ...Theme.fonts.caption,
+     color: Theme.colors.textSecondary,
+     marginTop: Theme.spacing.xs,
+     fontStyle: 'italic',
+   },
+   // Suggestions section styles
+   suggestionsContainer: {
+     gap: Theme.spacing.sm,
+   },
+   suggestionItem: {
+     backgroundColor: '#F0F8FF', // Light blue background
+     borderRadius: Theme.borderRadius.medium,
+     padding: Theme.spacing.md,
+     borderLeftWidth: 3,
+     borderLeftColor: Theme.colors.primaryBlue,
    },
 }); 
