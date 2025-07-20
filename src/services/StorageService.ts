@@ -211,12 +211,55 @@ export class StorageService {
       if (!drinksData) return [];
       
       const drinks = JSON.parse(drinksData);
-      // Convert date strings back to Date objects
-      return drinks.map((drink: any) => ({
-        ...drink,
-        timestamp: new Date(drink.timestamp),
-        recordedAt: new Date(drink.recordedAt)
-      }));
+      
+      // Convert date strings back to Date objects and validate/sanitize data
+      const validatedDrinks = drinks
+        .map((drink: any) => {
+          // Sanitize and validate the drink data
+          const sanitizedDrink = {
+            ...drink,
+            timestamp: new Date(drink.timestamp),
+            recordedAt: new Date(drink.recordedAt),
+            // Ensure numeric fields are valid numbers
+            caffeineAmount: Number(drink.caffeineAmount) || 0,
+            completionPercentage: Number(drink.completionPercentage) || 0,
+            actualCaffeineConsumed: Number(drink.actualCaffeineConsumed) || 0
+          };
+          
+          // Validate bounds
+          sanitizedDrink.caffeineAmount = Math.max(0, Math.min(1000, sanitizedDrink.caffeineAmount));
+          sanitizedDrink.completionPercentage = Math.max(0, Math.min(100, sanitizedDrink.completionPercentage));
+          sanitizedDrink.actualCaffeineConsumed = Math.max(0, Math.min(1000, sanitizedDrink.actualCaffeineConsumed));
+          
+          return sanitizedDrink;
+        })
+        .filter((drink: any) => {
+          // Filter out drinks with invalid data
+          return drink.id && 
+                 drink.name && 
+                 drink.userId && 
+                 !isNaN(drink.caffeineAmount) && 
+                 !isNaN(drink.completionPercentage) && 
+                 !isNaN(drink.actualCaffeineConsumed) &&
+                 drink.timestamp instanceof Date && 
+                 !isNaN(drink.timestamp.getTime()) &&
+                 drink.recordedAt instanceof Date && 
+                 !isNaN(drink.recordedAt.getTime());
+        });
+      
+      console.log('[StorageService] 📊 Drinks data loaded and validated:', {
+        totalRecords: drinks.length,
+        validRecords: validatedDrinks.length,
+        filteredOut: drinks.length - validatedDrinks.length
+      });
+      
+      // If we filtered out invalid records, save the cleaned data back
+      if (validatedDrinks.length !== drinks.length) {
+        console.log('[StorageService] 🧹 Cleaning up invalid drink records...');
+        await this.saveDrinksHistory(validatedDrinks);
+      }
+      
+      return validatedDrinks;
     } catch (error) {
       console.error('Error loading drinks history:', error);
       return [];
@@ -249,6 +292,11 @@ export class StorageService {
         console.log('[StorageService] 🔄 Recalculating streak due to new drink today');
         await this.calculateUnder400Streak(drink.userId, true); // Force recalculate
       }
+      
+      // If there was a stored day score for this drink's date, remove it
+      // so it can be recalculated with the updated drink data
+      console.log('[StorageService] 🗑️ Clearing day score for date:', drinkDate);
+      await this.removeDayScore(drink.userId, drinkDate);
       
       console.log('[StorageService] ✅ Drink record saved successfully. Total drinks:', existingDrinks.length);
     } catch (error) {
@@ -304,6 +352,44 @@ export class StorageService {
     } catch (error) {
       console.error('[StorageService] ❌ Error getting today\'s drinks:', error);
       return [];
+    }
+  }
+
+  static async deleteDrinkRecord(drinkId: string): Promise<void> {
+    try {
+      console.log('[StorageService] 🗑️ Deleting drink record:', drinkId);
+      
+      const existingDrinks = await this.getDrinksHistory();
+      const drinkToDelete = existingDrinks.find(drink => drink.id === drinkId);
+      
+      if (!drinkToDelete) {
+        console.warn('[StorageService] ⚠️ Drink not found for deletion:', drinkId);
+        return;
+      }
+      
+      const filteredDrinks = existingDrinks.filter(drink => drink.id !== drinkId);
+      await this.saveDrinksHistory(filteredDrinks);
+      
+      console.log('[StorageService] ✅ Drink record deleted successfully:', {
+        deletedDrink: drinkToDelete.name,
+        remainingDrinks: filteredDrinks.length
+      });
+      
+      // Invalidate streak cache since deleting a drink could change the streak
+      // Note: A deleted drink from any day could potentially affect the streak calculation
+      // so we should always recalculate when a drink is deleted
+      console.log('[StorageService] 🔄 Recalculating streak due to drink deletion');
+      await this.calculateUnder400Streak(drinkToDelete.userId, true); // Force recalculate
+      
+      // If there was a stored day score for the deleted drink's date, remove it
+      // so it can be recalculated with the updated drink data
+      const drinkDate = drinkToDelete.timestamp.toISOString().split('T')[0];
+      console.log('[StorageService] 🗑️ Clearing day score for date:', drinkDate);
+      await this.removeDayScore(drinkToDelete.userId, drinkDate);
+      
+    } catch (error) {
+      console.error('[StorageService] ❌ Error deleting drink record:', error);
+      throw error;
     }
   }
 
@@ -386,27 +472,51 @@ export class StorageService {
       
       const parsed = JSON.parse(legacyData);
       if (parsed.drinks && Array.isArray(parsed.drinks)) {
-        // Convert legacy format to new format
-        const convertedDrinks: DrinkRecord[] = parsed.drinks.map((drink: any) => ({
-          id: drink.id,
-          userId: 'migrated_user', // Will be updated when profile is available
-          name: drink.name,
-          caffeineAmount: drink.caffeineAmount,
-          completionPercentage: drink.completionPercentage,
-          actualCaffeineConsumed: drink.actualCaffeineConsumed,
-          timestamp: new Date(drink.recordedAt), // Use recordedAt as timestamp
-          timeToConsume: drink.timeToConsume,
-          recordedAt: new Date(drink.recordedAt)
-        }));
+        // Convert legacy format to new format with validation
+        const convertedDrinks: DrinkRecord[] = parsed.drinks
+          .map((drink: any) => {
+            // Sanitize numeric values
+            const sanitizedDrink = {
+              id: drink.id || Date.now().toString(),
+              userId: 'migrated_user', // Will be updated when profile is available
+              name: drink.name || 'Unknown Drink',
+              caffeineAmount: Number(drink.caffeineAmount) || 0,
+              completionPercentage: Number(drink.completionPercentage) || 100,
+              actualCaffeineConsumed: Number(drink.actualCaffeineConsumed) || 0,
+              timestamp: new Date(drink.recordedAt || drink.timestamp || Date.now()),
+              timeToConsume: drink.timeToConsume || '00:05:00',
+              recordedAt: new Date(drink.recordedAt || Date.now())
+            };
+            
+            // Validate bounds
+            sanitizedDrink.caffeineAmount = Math.max(0, Math.min(1000, sanitizedDrink.caffeineAmount));
+            sanitizedDrink.completionPercentage = Math.max(0, Math.min(100, sanitizedDrink.completionPercentage));
+            sanitizedDrink.actualCaffeineConsumed = Math.max(0, Math.min(1000, sanitizedDrink.actualCaffeineConsumed));
+            
+            return sanitizedDrink;
+          })
+          .filter((drink: any) => {
+            // Only include drinks with valid data
+            return drink.id && 
+                   drink.name && 
+                   !isNaN(drink.caffeineAmount) && 
+                   !isNaN(drink.completionPercentage) && 
+                   !isNaN(drink.actualCaffeineConsumed) &&
+                   drink.timestamp instanceof Date && 
+                   !isNaN(drink.timestamp.getTime());
+          });
         
         await this.saveDrinksHistory(convertedDrinks);
-        console.log('Migrated legacy drink data');
+        console.log('[StorageService] ✅ Migrated legacy drink data:', {
+          originalCount: parsed.drinks.length,
+          migratedCount: convertedDrinks.length
+        });
       }
       
       // Remove legacy data
       await AsyncStorage.removeItem('jitter_drinks_data');
     } catch (error) {
-      console.error('Error migrating legacy data:', error);
+      console.error('[StorageService] ❌ Error migrating legacy data:', error);
     }
   }
 
@@ -481,6 +591,26 @@ export class StorageService {
     } catch (error) {
       console.error('[StorageService] ❌ Error adding day score:', error);
       throw error;
+    }
+  }
+
+  static async removeDayScore(userId: string, date: string): Promise<void> {
+    try {
+      const existingScores = await this.getDayScores();
+      const filteredScores = existingScores.filter(
+        existing => !(existing.date === date && existing.userId === userId)
+      );
+      
+      const wasRemoved = existingScores.length !== filteredScores.length;
+      
+      if (wasRemoved) {
+        await this.saveDayScores(filteredScores);
+        console.log('[StorageService] ✅ Day score removed for date:', date);
+      } else {
+        console.log('[StorageService] ℹ️ No day score found to remove for date:', date);
+      }
+    } catch (error) {
+      console.error('[StorageService] ❌ Error removing day score:', error);
     }
   }
 

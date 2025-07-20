@@ -276,8 +276,33 @@ export class CaffScoreService {
     const lastNightSleep = await StorageService.getLastNightSleep(userProfile.userId);
     const effectiveSleepHours = lastNightSleep || DEFAULT_VALUES.BASELINE_SLEEP_HOURS;
     
+    // Validate inputs and filter out invalid drinks
+    const validDrinks = drinks.filter(drink => {
+      const isValid = drink.caffeineAmount >= 0 && 
+                     drink.caffeineAmount <= 1000 && 
+                     drink.actualCaffeineConsumed >= 0 && 
+                     drink.actualCaffeineConsumed <= 1000 &&
+                     drink.completionPercentage >= 0 && 
+                     drink.completionPercentage <= 100 &&
+                     drink.timestamp instanceof Date &&
+                     !isNaN(drink.timestamp.getTime());
+      
+      if (!isValid) {
+        console.warn('[CaffScoreService] ⚠️ Filtering out invalid drink:', {
+          name: drink.name,
+          caffeineAmount: drink.caffeineAmount,
+          actualCaffeineConsumed: drink.actualCaffeineConsumed,
+          completionPercentage: drink.completionPercentage
+        });
+      }
+      
+      return isValid;
+    });
+    
     console.log('[CaffScoreService] 📊 Input data:', {
-      drinksCount: drinks.length,
+      totalDrinks: drinks.length,
+      validDrinks: validDrinks.length,
+      filteredOut: drinks.length - validDrinks.length,
       lastNightSleep: effectiveSleepHours,
       userAge: userProfile.age,
       userWeight: userProfile.weightKg,
@@ -288,10 +313,10 @@ export class CaffScoreService {
     const personalizedHalfLife = CrashRiskService.calculatePersonalizedHalfLife(userProfile);
     
     // Calculate current caffeine level
-    const currentCaffeineLevel = CrashRiskService.calculateCurrentCaffeineLevel(drinks, personalizedHalfLife, currentTime);
+    const currentCaffeineLevel = CrashRiskService.calculateCurrentCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
     
     // Calculate peak caffeine level
-    const peakCaffeineLevel = CrashRiskService.calculatePeakCaffeineLevel(drinks, personalizedHalfLife, currentTime);
+    const peakCaffeineLevel = CrashRiskService.calculatePeakCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
     
     // Calculate tolerance threshold
     const toleranceThreshold = userProfile.meanDailyCaffeineMg || 200;
@@ -305,7 +330,7 @@ export class CaffScoreService {
     
     // Calculate all focus factors
     const currentLevel = this.calculateFocusLevelFactor(currentCaffeineLevel, toleranceThreshold);
-    const risingRate = this.calculateFocusRisingRate(drinks, personalizedHalfLife, currentTime);
+    const risingRate = this.calculateFocusRisingRate(validDrinks, personalizedHalfLife, currentTime);
     const tolerance = this.calculateFocusTolerance(userProfile.meanDailyCaffeineMg, userProfile.weightKg, userProfile);
     
     // Calculate sleep debt and circadian factors
@@ -317,7 +342,7 @@ export class CaffScoreService {
     const circadian = CrashRiskService.calculateCircadianFactor(currentTime);
     
     const focus = this.calculateFocusCapacity(sleepDebt, circadian, userProfile.age);
-    const currentActivity = this.calculateCurrentCaffeineActivity(drinks, personalizedHalfLife, currentTime);
+    const currentActivity = this.calculateCurrentCaffeineActivity(validDrinks, personalizedHalfLife, currentTime);
     
     console.log('[CaffScoreService] 🧠 All focus factors calculated:', {
       currentLevel: currentLevel.toFixed(3),

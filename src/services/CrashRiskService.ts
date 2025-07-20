@@ -416,7 +416,24 @@ export class CrashRiskService {
     const validation = ValidationService.validateCalculationInputs(userProfile, drinks, effectiveSleepHours);
     if (!validation.isValid) {
       console.error('[CrashRiskService] ❌ Validation failed:', validation.errors);
-      throw new Error(`Invalid calculation inputs: ${validation.errors.join(', ')}`);
+      console.log('[CrashRiskService] 🛡️ Returning safe default crash risk due to validation errors');
+      
+      // Return a safe default result instead of throwing
+      return {
+        score: 0,
+        factors: {
+          delta: 0,
+          sleepDebt: 0,
+          tolerance: 0.5,
+          metabolic: 1.0,
+          circadian: 0.5
+        },
+        personalizedHalfLife: 6.0,
+        currentCaffeineLevel: 0,
+        peakCaffeineLevel: 0,
+        validUntil: new Date(currentTime.getTime() + 1000),
+        calculatedAt: currentTime
+      };
     }
 
     // Calculate personalized half-life (now includes age factor)

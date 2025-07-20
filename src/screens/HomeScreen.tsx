@@ -68,6 +68,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showFocusInfoModal, setShowFocusInfoModal] = useState(false);
   
+  // Delete confirmation state
+  const [deletingDrinkId, setDeletingDrinkId] = useState<string | null>(null);
+  
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
   const customTimeInputRef = useRef<TextInput>(null);
@@ -544,6 +547,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       // React to drink logged for planning system
       console.log('[HomeScreen] 📅 Updating planning system after drink logging...');
       await PlanningService.reactToDrinkLogged(userProfile.userId, newDrink);
+      
+      // Update stats calculations
+      console.log('[HomeScreen] 📊 Updating stats calculations after drink logging...');
+      await updateStatsCalculations(userProfile.userId);
     }
 
     // Reset everything
@@ -673,6 +680,74 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       }
     } catch (error) {
       console.error('[HomeScreen] ❌ Error checking widget pre-fill:', error);
+    }
+  };
+
+  // Update stats calculations after data changes
+  const updateStatsCalculations = async (userId: string) => {
+    try {
+      // Force recalculation of the under 400mg streak
+      console.log('[HomeScreen] 🔄 Recalculating under 400mg streak...');
+      await StorageService.calculateUnder400Streak(userId, true);
+      
+      // Note: Calendar summary and other monthly stats will be recalculated 
+      // automatically when the stats screen loads, as they don't use caching
+      console.log('[HomeScreen] ✅ Stats calculations updated');
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error updating stats calculations:', error);
+    }
+  };
+
+  // Handle drink deletion
+  const handleDeleteDrink = async (drinkId: string) => {
+    try {
+      console.log('[HomeScreen] 🗑️ Deleting drink:', drinkId);
+      
+      // Delete the drink from storage
+      await StorageService.deleteDrinkRecord(drinkId);
+      
+      // Clear crash risk cache to force recalculation
+      console.log('[HomeScreen] 🗑️ Clearing crash risk cache after drink deletion');
+      await StorageService.clearCrashRiskCache();
+      
+      // Reload drinks from storage to ensure state consistency
+      if (userProfile) {
+        console.log('[HomeScreen] 🔄 Reloading drinks data after deletion...');
+        const updatedTodaysDrinks = await StorageService.getDrinksToday(userProfile.userId);
+        const updatedLast24HoursDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+        setTodaysDrinks(updatedTodaysDrinks);
+        setLast24HoursDrinks(updatedLast24HoursDrinks);
+        
+        // Update totals (using today's drinks for daily total)
+        const newTotal = calculateTotalCaffeine(updatedTodaysDrinks);
+        console.log('[HomeScreen] 📊 Updated daily caffeine total after deletion:', newTotal, 'mg');
+        setTotalDailyCaffeine(newTotal);
+      }
+      
+      // Update both crash risk and CaffScore
+      console.log('[HomeScreen] 🎯 Recalculating crash risk and CaffScore after deletion...');
+      await updateCrashRiskScore();
+      await calculateCaffScore();
+      
+      // Update widget data with new scores
+      if (userProfile) {
+        console.log('[HomeScreen] 📱 Updating widget data after drink deletion...');
+        await WidgetService.updateWidgetData(userProfile.userId);
+      }
+      
+      // Force recalculation of stats that are shown in stats screen
+      if (userProfile) {
+        console.log('[HomeScreen] 📊 Updating stats calculations after drink deletion...');
+        await updateStatsCalculations(userProfile.userId);
+      }
+      
+      // Clear deletion state
+      setDeletingDrinkId(null);
+      
+      console.log('[HomeScreen] ✅ Drink deletion complete');
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error deleting drink:', error);
+      setDeletingDrinkId(null);
     }
   };
 
@@ -899,17 +974,43 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                       })}
                     </Text>
                   </View>
-                  {todaysDrinks.map((drink) => (
-                    <View key={drink.id} style={styles.drinkItem}>
-                      <View style={styles.drinkItemHeader}>
-                        <Text style={styles.drinkName}>{drink.name}</Text>
-                        <Text style={styles.drinkTime}>{drink.timeToConsume}</Text>
-                      </View>
-                      <Text style={styles.drinkCaffeine}>
-                        {drink.actualCaffeineConsumed}mg caffeine consumed
-                      </Text>
-                    </View>
-                  ))}
+                  {todaysDrinks.map((drink) => {
+                    const isDeleting = deletingDrinkId === drink.id;
+                    return (
+                      <TouchableOpacity
+                        key={drink.id}
+                        style={[
+                          styles.drinkItem,
+                          isDeleting && styles.drinkItemDeleting
+                        ]}
+                        onLongPress={() => setDeletingDrinkId(drink.id)}
+                        onPress={() => {
+                          if (isDeleting) {
+                            handleDeleteDrink(drink.id);
+                          } else {
+                            setDeletingDrinkId(null);
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        {isDeleting ? (
+                          <View style={styles.deleteConfirmContainer}>
+                            <Text style={styles.deleteConfirmText}>delete?</Text>
+                          </View>
+                        ) : (
+                          <>
+                            <View style={styles.drinkItemHeader}>
+                              <Text style={styles.drinkName}>{drink.name}</Text>
+                              <Text style={styles.drinkTime}>{drink.timeToConsume}</Text>
+                            </View>
+                            <Text style={styles.drinkCaffeine}>
+                              {drink.actualCaffeineConsumed}mg caffeine consumed
+                            </Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                   
                   {/* Daily Caffeine Progress Bar */}
                   <View style={styles.dailyCaffeineContainer}>
@@ -938,9 +1039,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               <Text style={styles.timerText}>{formatTime(elapsedTime)}</Text>
               <Text style={styles.sippingLabel}>time sipping</Text>
               
-              <TouchableOpacity style={styles.doneButton} onPress={handleStopTimer}>
-                <Text style={styles.doneButtonText}>✓</Text>
-              </TouchableOpacity>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity style={styles.cancelButton} onPress={() => {
+                  setTimerStarted(false);
+                  setIsTimerRunning(false);
+                  setElapsedTime(0);
+                  setDrinkName('');
+                }}>
+                  <Text style={styles.cancelButtonText}>✕</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.doneButton} onPress={handleStopTimer}>
+                  <Text style={styles.doneButtonText}>✓</Text>
+                </TouchableOpacity>
+              </View>
               
               {/* Drink Name Input */}
               <View style={styles.drinkNameSection}>
@@ -1031,9 +1142,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               
               {/* Record Button */}
               <View style={styles.recordSection}>
-                <TouchableOpacity style={styles.recordButton} onPress={handleRecord}>
-                  <Text style={styles.recordButtonIcon}>✓</Text>
-                </TouchableOpacity>
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => {
+                    setShowFollowUp(false);
+                    setTimerStarted(false);
+                    setDrinkName('');
+                    setCaffeineAmount('');
+                    setCompletionPercentage(50);
+                    setCustomTime('');
+                    setTimeDigits('');
+                    setElapsedTime(0);
+                  }}>
+                    <Text style={styles.cancelButtonText}>✕</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.recordButton} onPress={handleRecord}>
+                    <Text style={styles.recordButtonIcon}>✓</Text>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.recordLabel}>record</Text>
               </View>
             </View>
@@ -1421,6 +1546,13 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
     marginBottom: Theme.spacing.lg,
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+  },
   doneButton: {
     width: 50,
     height: 50,
@@ -1433,11 +1565,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 6,
-    marginBottom: Theme.spacing.lg,
   },
   doneButtonText: {
     fontSize: 24,
     color: Theme.colors.white,
+  },
+  cancelButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: Theme.colors.accentRed,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: Theme.colors.accentRed,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  cancelButtonText: {
+    fontSize: 24,
+    color: Theme.colors.white,
+    fontWeight: '300',
   },
   drinkNameSection: {
     alignItems: 'center',
@@ -1596,6 +1745,21 @@ const styles = StyleSheet.create({
   drinkCaffeine: {
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
+  },
+  drinkItemDeleting: {
+    backgroundColor: Theme.colors.accentRed,
+  },
+  deleteConfirmContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Theme.spacing.md,
+  },
+  deleteConfirmText: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.white,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   // Daily caffeine progress bar styles
   dailyCaffeineContainer: {
