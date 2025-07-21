@@ -17,6 +17,125 @@ export interface WidgetData {
 
 export class WidgetService {
   private static readonly WIDGET_DATA_KEY = 'jitter_widget_data';
+  private static readonly WIDGET_PREFERENCES_KEY = 'jitter_widget_preferences';
+  
+  /**
+   * Set up widgets (similar to NotificationService.setupNotifications)
+   */
+  static async setupWidgets(): Promise<boolean> {
+    try {
+      console.log('[WidgetService] 🚀 Setting up widgets...');
+
+      // Check if user profile exists
+      const userProfile = await StorageService.getUserProfile();
+      if (!userProfile) {
+        console.log('[WidgetService] ❌ No user profile found');
+        return false;
+      }
+
+      // Update widget data to ensure it's current
+      await this.updateWidgetData(userProfile.userId);
+      
+      // Check if widget data is available
+      const widgetData = await this.getWidgetData();
+      
+      if (!widgetData) {
+        console.log('[WidgetService] ❌ Unable to prepare widget data');
+        return false;
+      }
+
+      // Store widget preferences
+      await AsyncStorage.setItem(this.WIDGET_PREFERENCES_KEY, JSON.stringify({
+        enabled: true,
+        setupAt: new Date().toISOString(),
+      }));
+
+      console.log('[WidgetService] ✅ Widget setup completed successfully');
+      console.log('[WidgetService] 💾 Widget preferences saved:', {
+        enabled: true,
+        caffScore: widgetData.caffScore,
+        currentCaffeineLevel: widgetData.currentCaffeineLevel
+      });
+
+      return true;
+    } catch (error) {
+      console.error('[WidgetService] ❌ Widget setup failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if widgets are enabled (similar to NotificationService.areNotificationsEnabled)
+   */
+  static async areWidgetsEnabled(): Promise<boolean> {
+    try {
+      const preferences = await this.getWidgetPreferences();
+      return preferences.enabled;
+    } catch (error) {
+      console.error('[WidgetService] ❌ Error checking widget status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get widget preferences from storage
+   */
+  static async getWidgetPreferences(): Promise<{
+    enabled: boolean;
+    setupAt?: string;
+  }> {
+    try {
+      const stored = await AsyncStorage.getItem(this.WIDGET_PREFERENCES_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('[WidgetService] ❌ Error getting widget preferences:', error);
+    }
+    
+    // Return default preferences
+    return {
+      enabled: false,
+    };
+  }
+
+  /**
+   * Update widget preferences in storage
+   */
+  static async updateWidgetPreferences(preferences: Partial<{
+    enabled: boolean;
+  }>): Promise<void> {
+    try {
+      const current = await this.getWidgetPreferences();
+      const updated = {
+        ...current,
+        ...preferences,
+        lastUpdated: new Date().toISOString(),
+      };
+      
+      await AsyncStorage.setItem(this.WIDGET_PREFERENCES_KEY, JSON.stringify(updated));
+      console.log('[WidgetService] ✅ Widget preferences updated:', updated);
+    } catch (error) {
+      console.error('[WidgetService] ❌ Error updating widget preferences:', error);
+    }
+  }
+
+  /**
+   * Disable widgets (similar to NotificationService.disableNotifications)
+   */
+  static async disableWidgets(): Promise<void> {
+    console.log('[WidgetService] 🔇 Disabling widgets...');
+    
+    try {
+      await this.updateWidgetPreferences({
+        enabled: false,
+      });
+      
+      console.log('[WidgetService] ✅ Widgets disabled successfully');
+    } catch (error) {
+      console.error('[WidgetService] ❌ Failed to disable widgets:', error);
+    }
+  }
   
   /**
    * Updates widget data with current app state

@@ -27,10 +27,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [widgetsEnabled, setWidgetsEnabled] = useState(false);
 
   useEffect(() => {
     loadUserProfile();
     checkNotificationStatus();
+    checkWidgetStatus();
   }, []);
 
   const loadUserProfile = async () => {
@@ -51,6 +53,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       console.log('[SettingsScreen] 📱 Notification status checked:', enabled);
     } catch (error) {
       console.error('Error checking notification status:', error);
+    }
+  };
+
+  const checkWidgetStatus = async () => {
+    try {
+      const enabled = await WidgetService.areWidgetsEnabled();
+      setWidgetsEnabled(enabled);
+      console.log('[SettingsScreen] 📱 Widget status checked:', enabled);
+    } catch (error) {
+      console.error('Error checking widget status:', error);
     }
   };
 
@@ -148,22 +160,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         return;
       }
 
-      // Update widget data to ensure it's current
-      await WidgetService.updateWidgetData(userProfile.userId);
+      const setupSuccessful = await WidgetService.setupWidgets();
       
-      // Check if widget data is available
-      const widgetData = await WidgetService.getWidgetData();
-      
-      if (widgetData) {
+      if (setupSuccessful) {
+        setWidgetsEnabled(true);
+        
+        // Get widget data to show in success message
+        const widgetData = await WidgetService.getWidgetData();
+        
         Alert.alert(
           'Widget Setup',
-          `Your Jitter widget is ready! 🎉\n CaffScore: ${widgetData.caffScore}\n• Caffeine Level: ${widgetData.currentCaffeineLevel}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
+          `Your Jitter widget is ready! 🎉\n\nCurrent Status:\n• Focus Score: ${widgetData?.caffScore || 0}\n• Caffeine Level: ${widgetData?.currentCaffeineLevel || 0}mg\n\nTo add the widget:\n1. Long-press your home screen\n2. Tap the "+" button\n3. Search for "Jitter"\n4. Select your preferred widget size`,
           [{ text: 'Got it!' }]
         );
+        
+        // Force refresh status after a brief delay to ensure persistence
+        setTimeout(() => {
+          checkWidgetStatus();
+        }, 1000);
+        
+        console.log('[SettingsScreen] ✅ Widgets enabled successfully');
       } else {
         Alert.alert(
-          'Widget Setup',
-          'Unable to prepare widget data. Please log some drinks first and try again.',
+          'Setup Error',
+          'Unable to set up your widget. Please make sure you have some drink data and try again.',
           [{ text: 'OK' }]
         );
       }
@@ -172,6 +192,32 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       Alert.alert(
         'Setup Error',
         'There was an error setting up your widget. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleWidgetDisable = async () => {
+    try {
+      console.log('[SettingsScreen] 🔇 Disabling widgets...');
+      
+      Alert.alert(
+        'Disable Widgets?',
+        'Your home screen widget will no longer receive updates. You can re-enable this anytime.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Disable', style: 'destructive', onPress: async () => {
+            await WidgetService.disableWidgets();
+            setWidgetsEnabled(false);
+            console.log('[SettingsScreen] ✅ Widgets disabled');
+          }}
+        ]
+      );
+    } catch (error) {
+      console.error('[SettingsScreen] ❌ Error disabling widgets:', error);
+      Alert.alert(
+        'Error',
+        'There was an error disabling widgets. Please try again.',
         [{ text: 'OK' }]
       );
     }
@@ -257,23 +303,57 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Widget Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>widget</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>widget</Text>
+            {widgetsEnabled && (
+              <TouchableOpacity 
+                style={styles.headerDisableButton}
+                onPress={handleWidgetDisable}
+              >
+                <Text style={styles.headerDisableButtonText}>disable</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.widgetRow} onPress={handleWidgetSetup}>
-              <View style={styles.widgetLeft}>
-                <View style={styles.widgetIndicator} />
-                <Text style={styles.widgetIcon}>📱</Text>
-                <View>
-                  <Text style={styles.widgetTitle}>set up widget</Text>
-                  <Text style={styles.widgetSubtitle}>
-                    add to home screen for{'\n'}quick brain health checks
-                  </Text>
+            <View style={[
+              styles.widgetRow,
+              widgetsEnabled && styles.widgetRowEnabled
+            ]}>
+              <TouchableOpacity 
+                style={styles.widgetContent} 
+                onPress={widgetsEnabled ? undefined : handleWidgetSetup}
+                disabled={widgetsEnabled}
+              >
+                <View style={styles.widgetLeft}>
+                  <View style={[
+                    styles.widgetIndicator, 
+                    widgetsEnabled && styles.widgetIndicatorEnabled
+                  ]} />
+                  <Text style={styles.widgetIcon}>📱</Text>
+                  <View>
+                    <Text style={styles.widgetTitle}>
+                      {widgetsEnabled ? 'widgets are set up!' : 'set up widget'}
+                    </Text>
+                    <Text style={styles.widgetSubtitle}>
+                      {widgetsEnabled 
+                        ? 'home screen widget active' 
+                        : `add to home screen for${'\n'}quick brain health checks`
+                      }
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.setupButton}>
-                <Text style={styles.setupButtonText}>set up</Text>
-              </View>
-            </TouchableOpacity>
+                {!widgetsEnabled && (
+                  <View style={styles.setupButton}>
+                    <Text style={styles.setupButtonText}>set up</Text>
+                  </View>
+                )}
+                {widgetsEnabled && (
+                  <View style={styles.enabledIndicator}>
+                    <Text style={styles.enabledText}>✓</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -478,6 +558,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   widgetRow: {
+    flexDirection: 'column',
+  },
+  widgetRowEnabled: {
+    backgroundColor: Theme.colors.primaryGreen + '10', // Light green background
+  },
+  widgetContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -494,6 +580,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Theme.colors.accentRed,
     marginRight: Theme.spacing.sm,
+  },
+  widgetIndicatorEnabled: {
+    backgroundColor: Theme.colors.primaryGreen,
   },
   widgetIcon: {
     fontSize: 24,

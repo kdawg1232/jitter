@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Theme } from '../../theme/colors';
 import { OnboardingData } from '../../types/onboarding';
-import { NotificationService } from '../../services';
+import { NotificationService, WidgetService } from '../../services';
 
 interface SetupWidgetNotificationsScreenProps {
   data: OnboardingData;
@@ -31,7 +31,9 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
   totalSteps,
 }) => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [widgetsEnabled, setWidgetsEnabled] = useState(false);
   const [isSettingUp, setIsSettingUp] = useState(false);
+  const [isSettingUpWidget, setIsSettingUpWidget] = useState(false);
 
   const handleNotificationSetup = async () => {
     if (isSettingUp) return;
@@ -97,6 +99,55 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
     }
   };
 
+  const handleWidgetSetup = async () => {
+    if (isSettingUpWidget) return;
+    
+    setIsSettingUpWidget(true);
+    try {
+      console.log('[SetupWidgetNotificationsScreen] 📱 Starting widget setup...');
+      
+      const setupSuccessful = await WidgetService.setupWidgets();
+      
+      if (setupSuccessful) {
+        setWidgetsEnabled(true);
+        // Store widget setup status in onboarding data
+        onUpdateData({ widgetsEnabled: true });
+        console.log('[SetupWidgetNotificationsScreen] ✅ Widgets enabled successfully');
+      } else {
+        Alert.alert(
+          'Setup Error',
+          'Unable to set up your widget at this time. You can set this up later in Settings.',
+          [{ text: 'OK', onPress: () => {
+            onUpdateData({ widgetsEnabled: false });
+          }}]
+        );
+      }
+    } catch (error) {
+      console.error('[SetupWidgetNotificationsScreen] ❌ Error setting up widget:', error);
+      Alert.alert(
+        'Setup Error',
+        'There was an error setting up your widget. You can try again later in Settings.',
+        [{ text: 'OK', onPress: () => {
+          onUpdateData({ widgetsEnabled: false });
+        }}]
+      );
+    } finally {
+      setIsSettingUpWidget(false);
+    }
+  };
+
+  const handleWidgetDisable = async () => {
+    try {
+      console.log('[SetupWidgetNotificationsScreen] 🔇 Disabling widgets...');
+      await WidgetService.disableWidgets();
+      setWidgetsEnabled(false);
+      onUpdateData({ widgetsEnabled: false });
+      console.log('[SetupWidgetNotificationsScreen] ✅ Widgets disabled');
+    } catch (error) {
+      console.error('[SetupWidgetNotificationsScreen] ❌ Error disabling widgets:', error);
+    }
+  };
+
   const handleContinue = () => {
     onNext();
   };
@@ -124,23 +175,54 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
 
         {/* Widget Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>widget</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>widget</Text>
+            {widgetsEnabled && (
+              <TouchableOpacity 
+                style={styles.headerDisableButton}
+                onPress={handleWidgetDisable}
+              >
+                <Text style={styles.headerDisableButtonText}>disable</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <View style={styles.card}>
-            <View style={styles.widgetRow}>
+            <TouchableOpacity 
+              style={styles.widgetRow} 
+              onPress={widgetsEnabled ? undefined : handleWidgetSetup}
+              disabled={widgetsEnabled || isSettingUpWidget}
+            >
               <View style={styles.widgetLeft}>
-                <View style={styles.widgetIndicator} />
+                <View style={[
+                  styles.widgetIndicator, 
+                  widgetsEnabled && styles.widgetIndicatorEnabled
+                ]} />
                 <Text style={styles.widgetIcon}>📱</Text>
                 <View>
-                  <Text style={styles.widgetTitle}>set up widget</Text>
+                  <Text style={styles.widgetTitle}>
+                    {widgetsEnabled ? 'widgets are set up!' : 'set up widget'}
+                  </Text>
                   <Text style={styles.widgetSubtitle}>
-                    add to home screen for{'\n'}quick brain health checks
+                    {widgetsEnabled 
+                      ? 'home screen widget active' 
+                      : `add to home screen for${'\n'}quick brain health checks`
+                    }
                   </Text>
                 </View>
               </View>
-              <View style={styles.comingSoonButton}>
-                <Text style={styles.comingSoonButtonText}>set up</Text>
-              </View>
-            </View>
+              {!widgetsEnabled && (
+                <View style={styles.enableButton}>
+                  <Text style={styles.enableButtonText}>
+                    {isSettingUpWidget ? 'setting up...' : 'enable'}
+                  </Text>
+                </View>
+              )}
+              {widgetsEnabled && (
+                <View style={styles.enabledIndicator}>
+                  <Text style={styles.enabledText}>✓</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -288,6 +370,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Theme.colors.accentRed,
     marginRight: Theme.spacing.sm,
+  },
+  widgetIndicatorEnabled: {
+    backgroundColor: Theme.colors.primaryGreen,
   },
   widgetIcon: {
     fontSize: 24,

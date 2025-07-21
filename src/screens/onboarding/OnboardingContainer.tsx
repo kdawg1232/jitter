@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { OnboardingData, initialOnboardingData } from '../../types/onboarding';
 import { UserProfile } from '../../types';
-import { StorageService } from '../../services';
+import { StorageService, WidgetService } from '../../services';
 import { OnboardingWelcomeScreen } from './OnboardingWelcomeScreen';
 import { OnboardingProfileScreen } from './OnboardingProfileScreen';
 import { OnboardingHealthScreen } from './OnboardingHealthScreen';
@@ -122,6 +122,21 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
         
         await StorageService.addSleepRecord(sleepRecord);
         console.log('😴 Sleep record saved successfully');
+      }
+
+      // Set up widgets if enabled during onboarding
+      if (onboardingData.widgetsEnabled) {
+        try {
+          console.log('📱 Setting up widgets from onboarding...');
+          const widgetSetupSuccessful = await WidgetService.setupWidgets();
+          if (widgetSetupSuccessful) {
+            console.log('✅ Widgets set up successfully from onboarding');
+          } else {
+            console.log('⚠️ Widget setup failed during onboarding completion');
+          }
+        } catch (error) {
+          console.error('❌ Error setting up widgets from onboarding:', error);
+        }
       }
       
       // Verify the profile was saved correctly

@@ -63,6 +63,7 @@ export const EditInputScreen: React.FC<EditInputScreenProps> = ({
       lastNightSleep: userProfile.averageSleep7Days,
       trackSleepDaily: true,
       notificationsEnabled: false, // Will be checked from NotificationService if needed
+      widgetsEnabled: false, // Will be checked from WidgetService if needed
       currentStep: 2, // Start from profile step since we skip welcome
       isComplete: false,
     };

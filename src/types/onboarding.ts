@@ -30,6 +30,7 @@ export interface OnboardingData {
   
   // Widget & Notifications Setup (Screen 6)
   notificationsEnabled: boolean;
+  widgetsEnabled: boolean;
   
   // Completion tracking
   currentStep: number;
@@ -62,6 +63,7 @@ export const initialOnboardingData: OnboardingData = {
   lastNightSleep: null,
   trackSleepDaily: true,
   notificationsEnabled: false,
+  widgetsEnabled: false,
   currentStep: 1,
   isComplete: false,
 };
