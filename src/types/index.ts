@@ -42,6 +42,30 @@ export interface SleepRecord {
   createdAt: Date;
 }
 
+// Daily Tracking Types
+export interface StressRecord {
+  userId: string;
+  date: string;           // YYYY-MM-DD format
+  stressLevel: number;    // 1-10 scale
+  createdAt: Date;
+}
+
+export interface FoodRecord {
+  userId: string;
+  date: string;           // YYYY-MM-DD format
+  lastMealTime: Date;     // When the last meal was consumed
+  createdAt: Date;
+}
+
+export interface ExerciseRecord {
+  userId: string;
+  date: string;           // YYYY-MM-DD format
+  exerciseType: 'starting' | 'completed';
+  exerciseTime: Date;     // When exercise started or was completed
+  hoursAgo?: number;      // For 'completed' type, how many hours ago it was done
+  createdAt: Date;
+}
+
 // Enhanced Drink Record (extends existing)
 export interface DrinkRecord {
   id: string;
@@ -96,6 +120,9 @@ export interface AppStorage {
 export const STORAGE_KEYS = {
   USER_PROFILE: 'jitter_user_profile',
   SLEEP_RECORDS: 'jitter_sleep_records',
+  STRESS_RECORDS: 'jitter_stress_records',
+  FOOD_RECORDS: 'jitter_food_records',
+  EXERCISE_RECORDS: 'jitter_exercise_records',
   DRINKS_HISTORY: 'jitter_drinks_history',
   DAY_SCORES: 'jitter_day_scores',
   STREAK_DATA: 'jitter_streak_data',

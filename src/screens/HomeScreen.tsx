@@ -67,6 +67,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [needsSleepUpdate, setNeedsSleepUpdate] = useState(false);
   const [lastSleepLogDate, setLastSleepLogDate] = useState<string | null>(null);
   
+  // NEW: Food, stress, exercise tracking state
+  const [showStressModal, setShowStressModal] = useState(false);
+  const [showFoodModal, setShowFoodModal] = useState(false);
+  const [showExerciseModal, setShowExerciseModal] = useState(false);
+  const [stressLevel, setStressLevel] = useState<number | null>(null);
+  const [tempStressLevel, setTempStressLevel] = useState<number | null>(null);
+  const [lastMealTime, setLastMealTime] = useState<Date | null>(null);
+  const [lastExerciseTime, setLastExerciseTime] = useState<Date | null>(null);
+  const [exerciseType, setExerciseType] = useState<'starting' | 'completed' | null>(null);
+  const [exerciseHoursAgo, setExerciseHoursAgo] = useState<number | null>(null);
+  const [needsStressUpdate, setNeedsStressUpdate] = useState(false);
+  const [needsFoodUpdate, setNeedsFoodUpdate] = useState(false);
+  const [needsExerciseUpdate, setNeedsExerciseUpdate] = useState(false);
+  const [lastStressLogDate, setLastStressLogDate] = useState<string | null>(null);
+  const [lastFoodLogDate, setLastFoodLogDate] = useState<string | null>(null);
+  const [lastExerciseLogDate, setLastExerciseLogDate] = useState<string | null>(null);
+  const [foodButtonState, setFoodButtonState] = useState<'default' | 'added'>('default');
+  const [showExerciseTimeModal, setShowExerciseTimeModal] = useState(false);
+  const [selectedExerciseOption, setSelectedExerciseOption] = useState<'starting' | 'completed' | null>(null);
+  const [foodAdded, setFoodAdded] = useState(false);
+  
   // Info modal state
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showFocusInfoModal, setShowFocusInfoModal] = useState(false);
@@ -183,7 +204,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       const todaysDrinksData = await loadUserData();
       const total = calculateTotalCaffeine(todaysDrinksData);
       setTotalDailyCaffeine(total);
-      await checkSleepStatus();
+      await checkDailyTrackingStatus();
       
       // Check for widget pre-fill data
       await checkWidgetPreFill();
@@ -394,7 +415,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }
   }, []); // Empty dependency array = runs once on mount
 
-
+  // --- REFRESH DAILY TRACKING WHEN PROFILE LOADED ---
+  // When the userProfile becomes available (e.g., after navigating back to HomeScreen),
+  // we need to re-check whether today\'s sleep, stress, food, and exercise entries exist
+  // so the UI correctly reflects already-saved data.
+  useEffect(() => {
+    if (userProfile) {
+      console.log('[HomeScreen] 🔄 userProfile loaded/changed – refreshing daily tracking status');
+      checkDailyTrackingStatus();
+    }
+  }, [userProfile]);
 
   // Get current score
   const getCurrentScore = () => {
@@ -521,30 +551,56 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     Keyboard.dismiss();
   };
 
-  // Check if today's sleep has been logged
-  const checkSleepStatus = async () => {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    try {
-      // Check if sleep was logged today
-      const lastLogDate = await AsyncStorage.getItem('last_sleep_log_date');
-      setLastSleepLogDate(lastLogDate);
-      
-      if (lastLogDate !== today) {
-        setNeedsSleepUpdate(true);
-      } else {
-        setNeedsSleepUpdate(false);
-      }
-    } catch (error) {
-      console.error('Error checking sleep status:', error);
-      setNeedsSleepUpdate(true); // Default to needing update on error
-    }
-  };
+
 
   // Handle sleep button press
   const handleSleepPress = () => {
-    setTempSleepHours(lastNightSleep.toString());
-    setShowSleepModal(true);
+    try {
+      console.log('[HomeScreen] 🌙 Sleep button pressed');
+      setTempSleepHours(lastNightSleep.toString());
+      setShowSleepModal(true);
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error in handleSleepPress:', error);
+    }
+  };
+
+  // NEW: Handle stress button press
+  const handleStressPress = () => {
+    try {
+      console.log('[HomeScreen] 😰 Stress button pressed');
+      setTempStressLevel(stressLevel);
+      setShowStressModal(true);
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error in handleStressPress:', error);
+    }
+  };
+
+  // NEW: Handle food button press
+  const handleFoodPress = () => {
+    try {
+      console.log('[HomeScreen] 🍽️ Food button pressed, current state:', foodButtonState);
+      // Pre-populate with existing state if food was already added today
+      setFoodAdded(foodButtonState === 'added');
+      setShowFoodModal(true);
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error in handleFoodPress:', error);
+    }
+  };
+
+  // NEW: Handle exercise button press
+  const handleExercisePress = () => {
+    try {
+      console.log('[HomeScreen] 🏃‍♂️ Exercise button pressed, current type:', exerciseType);
+      // Pre-populate with existing exercise type if available
+      if (exerciseType) {
+        setSelectedExerciseOption(exerciseType);
+      } else {
+        setSelectedExerciseOption(null);
+      }
+      setShowExerciseModal(true);
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error in handleExercisePress:', error);
+    }
   };
 
   // Save sleep hours
@@ -561,6 +617,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       console.log('[HomeScreen] ❌ Invalid sleep hours, not saving');
       return;
     }
+
+    // Close the modal immediately so the UI is responsive while we finish async work
+    setShowSleepModal(false);
 
     try {
       console.log('[HomeScreen] 🔄 Updating sleep from', lastNightSleep, 'to', sleepHours, 'hours');
@@ -601,10 +660,230 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         console.log('[HomeScreen] ✅ Sleep saved successfully and CaffScore updated');
       }
       
-      setShowSleepModal(false);
-      setTempSleepHours('');
     } catch (error) {
       console.error('[HomeScreen] ❌ Error saving sleep:', error);
+    } finally {
+      // Always clear the temporary input so the next open starts fresh
+      setTempSleepHours('');
+    }
+  };
+
+  // NEW: Save stress level
+  const handleSaveStress = async () => {
+    if (tempStressLevel === null || tempStressLevel < 1 || tempStressLevel > 10) {
+      console.log('[HomeScreen] ❌ Invalid stress level, not saving');
+      return;
+    }
+
+    // Close the modal right away for better responsiveness
+    setShowStressModal(false);
+
+    // Defer heavy work so the modal can fully disappear first – this prevents the UI from freezing
+    setTimeout(async () => {
+      try {
+        console.log('[HomeScreen] 🔄 Updating stress level to:', tempStressLevel);
+        setStressLevel(tempStressLevel);
+        
+        if (userProfile) {
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Create stress record
+          const stressRecord = {
+            userId: userProfile.userId,
+            date: today,
+            stressLevel: tempStressLevel,
+            createdAt: new Date(),
+          };
+          
+          console.log('[HomeScreen] 💾 Saving stress record for date:', today);
+          await StorageService.addStressRecord(stressRecord);
+          await AsyncStorage.setItem('last_stress_log_date', today);
+          
+          setLastStressLogDate(today);
+          setNeedsStressUpdate(false);
+          
+          console.log('[HomeScreen] ✅ Stress level saved successfully');
+        }
+        
+      } catch (error) {
+        console.error('[HomeScreen] ❌ Error saving stress level:', error);
+      } finally {
+        // Always reset temp state
+        setTempStressLevel(null);
+      }
+    }, 0);
+  };
+
+  // NEW: Save food intake
+  const handleSaveFood = async () => {
+    // Close the modal immediately so the UI is free while we persist data
+    setShowFoodModal(false);
+
+    // Run persistence a tick later so the modal overlay is gone first
+    setTimeout(async () => {
+      try {
+        console.log('[HomeScreen] 🔄 Recording food intake:', { foodAdded });
+        
+        if (foodAdded) {
+          // Adding/updating food entry
+          const now = new Date();
+          setLastMealTime(now);
+          setFoodButtonState('added');
+          
+          if (userProfile) {
+            const today = new Date().toISOString().split('T')[0];
+            
+            // Create food record
+            const foodRecord = {
+              userId: userProfile.userId,
+              date: today,
+              lastMealTime: now,
+              createdAt: new Date(),
+            };
+            
+            console.log('[HomeScreen] �� Saving food record for date:', today);
+            await StorageService.addFoodRecord(foodRecord);
+            await AsyncStorage.setItem('last_food_log_date', today);
+            
+            setLastFoodLogDate(today);
+            setNeedsFoodUpdate(false);
+            
+            console.log('[HomeScreen] ✅ Food intake saved successfully');
+          }
+        } else {
+          // Removing food entry (user decided they haven't eaten)
+          setLastMealTime(null);
+          setFoodButtonState('default');
+          
+          if (userProfile) {
+            // Remove today's food log date to show as needing update
+            await AsyncStorage.removeItem('last_food_log_date');
+            setLastFoodLogDate(null);
+            setNeedsFoodUpdate(true);
+            
+            console.log('[HomeScreen] ✅ Food entry removed successfully');
+          }
+        }
+        
+      } catch (error) {
+        console.error('[HomeScreen] ❌ Error saving food intake:', error);
+      }
+    }, 0);
+  };
+
+  // NEW: Save exercise data
+  const handleSaveExercise = async () => {
+    console.log('[HomeScreen] 🔄 handleSaveExercise invoked with option:', selectedExerciseOption);
+
+    // Always close the main exercise modal first so only one modal is visible at a time
+    setShowExerciseModal(false);
+
+    // CASE 1: User chose to remove entry
+    if (selectedExerciseOption === null) {
+      // Defer heavy work
+      setTimeout(async () => {
+        try {
+          setLastExerciseTime(null);
+          setExerciseType(null);
+          setExerciseHoursAgo(null);
+
+          if (userProfile) {
+            await AsyncStorage.removeItem('last_exercise_log_date');
+            setLastExerciseLogDate(null);
+            setNeedsExerciseUpdate(true);
+          }
+          console.log('[HomeScreen] ✅ Exercise entry removed successfully');
+        } catch (err) {
+          console.error('[HomeScreen] ❌ Error removing exercise entry:', err);
+        } finally {
+          setSelectedExerciseOption(null);
+        }
+      }, 0);
+      return;
+    }
+
+    // CASE 2: User chose "I already exercised" → we need the secondary time modal
+    if (selectedExerciseOption === 'completed') {
+      // Open the time modal AFTER the first modal is gone (next tick prevents overlay freeze)
+      setTimeout(() => {
+        setShowExerciseTimeModal(true);
+      }, 0);
+      return; // Data will be persisted in handleSaveCompletedExercise
+    }
+
+    // CASE 3: User chose "starting" → persist immediately
+    setTimeout(async () => {
+      try {
+        const now = new Date();
+        setLastExerciseTime(now);
+        setExerciseType('starting');
+
+        if (userProfile) {
+          const today = new Date().toISOString().split('T')[0];
+          const exerciseRecord = {
+            userId: userProfile.userId,
+            date: today,
+            exerciseType: 'starting' as const,
+            exerciseTime: now,
+            createdAt: new Date(),
+          };
+          console.log('[HomeScreen] 💾 Saving exercise record for date:', today);
+          await StorageService.addExerciseRecord(exerciseRecord);
+          await AsyncStorage.setItem('last_exercise_log_date', today);
+
+          setLastExerciseLogDate(today);
+          setNeedsExerciseUpdate(false);
+          console.log('[HomeScreen] ✅ Exercise data saved successfully');
+        }
+      } catch (err) {
+        console.error('[HomeScreen] ❌ Error saving starting exercise:', err);
+      } finally {
+        setSelectedExerciseOption(null);
+      }
+    }, 0);
+  };
+
+  // NEW: Save completed exercise with time
+  const handleSaveCompletedExercise = async (hoursAgo: number) => {
+    try {
+      console.log('[HomeScreen] 🔄 Recording completed exercise:', { hoursAgo });
+      const now = new Date();
+      const exerciseTime = new Date(now.getTime() - hoursAgo * 60 * 60 * 1000);
+      
+      setLastExerciseTime(exerciseTime);
+      setExerciseType('completed');
+      setExerciseHoursAgo(hoursAgo);
+      
+      if (userProfile) {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Create exercise record
+        const exerciseRecord = {
+          userId: userProfile.userId,
+          date: today,
+          exerciseType: 'completed' as 'starting' | 'completed',
+          exerciseTime: exerciseTime,
+          hoursAgo: hoursAgo,
+          createdAt: new Date(),
+        };
+        
+        console.log('[HomeScreen] 💾 Saving completed exercise record for date:', today);
+        await StorageService.addExerciseRecord(exerciseRecord);
+        await AsyncStorage.setItem('last_exercise_log_date', today);
+        
+        setLastExerciseLogDate(today);
+        setNeedsExerciseUpdate(false);
+        
+        console.log('[HomeScreen] ✅ Completed exercise data saved successfully');
+      }
+      
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error saving completed exercise data:', error);
+    } finally {
+      // Always close both modals and reset state
+      setShowExerciseModal(false);
+      setShowExerciseTimeModal(false);
+      setSelectedExerciseOption(null);
     }
   };
 
@@ -777,7 +1056,65 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }, 100);
   };
 
-
+  // Check if today's sleep and other daily tracking has been logged
+  const checkDailyTrackingStatus = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Check sleep status
+      const lastSleepLogDate = await AsyncStorage.getItem('last_sleep_log_date');
+      setLastSleepLogDate(lastSleepLogDate);
+      setNeedsSleepUpdate(lastSleepLogDate !== today);
+      
+      // Check stress status
+      const lastStressLogDate = await AsyncStorage.getItem('last_stress_log_date');
+      setLastStressLogDate(lastStressLogDate);
+      setNeedsStressUpdate(lastStressLogDate !== today);
+      
+      // Check food status
+      const lastFoodLogDate = await AsyncStorage.getItem('last_food_log_date');
+      setLastFoodLogDate(lastFoodLogDate);
+      setNeedsFoodUpdate(lastFoodLogDate !== today);
+      
+      // Check exercise status
+      const lastExerciseLogDate = await AsyncStorage.getItem('last_exercise_log_date');
+      setLastExerciseLogDate(lastExerciseLogDate);
+      setNeedsExerciseUpdate(lastExerciseLogDate !== today);
+      
+      // Load existing data for today if available
+      if (userProfile) {
+        // Load stress level for today using StorageService
+        const todayStressLevel = await StorageService.getTodayStressLevel(userProfile.userId);
+        if (todayStressLevel !== null) {
+          setStressLevel(todayStressLevel);
+        }
+        
+        // Load meal time for today using StorageService
+        const todayLastMealTime = await StorageService.getTodayLastMealTime(userProfile.userId);
+        if (todayLastMealTime) {
+          setLastMealTime(todayLastMealTime);
+          setFoodButtonState('added');
+        } else {
+          setFoodButtonState('default');
+        }
+        
+        // Load exercise data for today using StorageService
+        const todayExerciseData = await StorageService.getTodayExerciseData(userProfile.userId);
+        if (todayExerciseData) {
+          setLastExerciseTime(todayExerciseData.exerciseTime);
+          setExerciseType(todayExerciseData.exerciseType);
+          setExerciseHoursAgo(todayExerciseData.hoursAgo || 0);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking daily tracking status:', error);
+      // Default to needing updates on error
+      setNeedsSleepUpdate(true);
+      setNeedsStressUpdate(true);
+      setNeedsFoodUpdate(true);
+      setNeedsExerciseUpdate(true);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -789,28 +1126,101 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Header with Sleep Button */}
+          {/* Header with Tracking Buttons */}
           <View style={styles.header}>
-            <TouchableOpacity 
-              style={[
-                styles.sleepButton,
-                needsSleepUpdate && styles.sleepButtonAlert
-              ]} 
-              onPress={handleSleepPress}
-            >
-              <Text style={styles.sleepEmoji}>🌙</Text>
-              <View style={styles.sleepTextContainer}>
+            {/* Left Column: Sleep and Stress */}
+            <View style={styles.leftColumn}>
+              <View style={styles.buttonWithLabel}>
+                <TouchableOpacity 
+                  style={[
+                    styles.trackingButton,
+                    needsSleepUpdate && styles.trackingButtonAlert
+                  ]} 
+                  onPress={handleSleepPress}
+                >
+                  <Text style={styles.trackingEmoji}>🌙</Text>
+                  {needsSleepUpdate && <Text style={styles.alertIcon}>!</Text>}
+                </TouchableOpacity>
                 <Text style={[
-                  styles.sleepText,
-                  needsSleepUpdate && styles.sleepTextAlert
+                  styles.buttonLabel,
+                  needsSleepUpdate && styles.buttonLabelAlert
                 ]}>
-                  {lastNightSleep ? `${lastNightSleep}h` : 'add sleep'}
-                  {needsSleepUpdate && <Text style={styles.alertIcon}> !</Text>}
+                  add sleep
                 </Text>
               </View>
-            </TouchableOpacity>
-            <Text style={styles.title}>jitter</Text>
-            <View style={styles.headerSpacer} />
+              
+              <View style={styles.buttonWithLabel}>
+                <TouchableOpacity 
+                  style={[
+                    styles.trackingButton,
+                    needsStressUpdate && styles.trackingButtonAlert
+                  ]} 
+                  onPress={handleStressPress}
+                >
+                  <Text style={styles.trackingEmoji}>😰</Text>
+                  {needsStressUpdate && <Text style={styles.alertIcon}>!</Text>}
+                </TouchableOpacity>
+                <Text style={[
+                  styles.buttonLabel,
+                  needsStressUpdate && styles.buttonLabelAlert
+                ]}>
+                  add stress level
+                </Text>
+              </View>
+            </View>
+            
+            {/* Center: Title */}
+            <View style={styles.centerColumn}>
+              <Text style={styles.title}>jitter</Text>
+              <Text style={styles.dateSubheading}>
+                {new Date().toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </Text>
+            </View>
+            
+            {/* Right Column: Food and Exercise */}
+            <View style={styles.rightColumn}>
+              <View style={styles.buttonWithLabel}>
+                <TouchableOpacity 
+                  style={[
+                    styles.trackingButton,
+                    needsFoodUpdate && styles.trackingButtonAlert
+                  ]} 
+                  onPress={handleFoodPress}
+                >
+                  <Text style={styles.trackingEmoji}>🍽️</Text>
+                  {needsFoodUpdate && <Text style={styles.alertIcon}>!</Text>}
+                </TouchableOpacity>
+                <Text style={[
+                  styles.buttonLabel,
+                  needsFoodUpdate && styles.buttonLabelAlert
+                ]}>
+                  add meal
+                </Text>
+              </View>
+              
+              <View style={styles.buttonWithLabel}>
+                <TouchableOpacity 
+                  style={[
+                    styles.trackingButton,
+                    needsExerciseUpdate && styles.trackingButtonAlert
+                  ]} 
+                  onPress={handleExercisePress}
+                >
+                  <Text style={styles.trackingEmoji}>🏃‍♂️</Text>
+                  {needsExerciseUpdate && <Text style={styles.alertIcon}>!</Text>}
+                </TouchableOpacity>
+                <Text style={[
+                  styles.buttonLabel,
+                  needsExerciseUpdate && styles.buttonLabelAlert
+                ]}>
+                  add exercise
+                </Text>
+              </View>
+            </View>
           </View>
           
           {/* Mascot */}
@@ -1145,7 +1555,244 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         </View>
       </Modal>
 
+      {/* NEW: Stress Level Modal */}
+      <Modal
+        visible={showStressModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowStressModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {stressLevel ? 'Update Stress Level' : 'Add Stress Level'}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              How stressed are you feeling today?
+              {stressLevel && ` (Currently: ${stressLevel}/10)`}
+            </Text>
+            
+            <View style={styles.stressButtonGrid}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.stressButton,
+                    tempStressLevel === level && styles.stressButtonSelected
+                  ]}
+                  onPress={() => setTempStressLevel(level)}
+                >
+                  <Text style={[
+                    styles.stressButtonText,
+                    tempStressLevel === level && styles.stressButtonTextSelected
+                  ]}>
+                    {level}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => setShowStressModal(false)}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalButtonSave} 
+                onPress={handleSaveStress}
+              >
+                <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
+      {/* NEW: Food Modal */}
+      <Modal
+        visible={showFoodModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowFoodModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {foodButtonState === 'added' ? 'Update Food' : 'Add Food'}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {foodButtonState === 'added' 
+                ? `Last meal: ${lastMealTime ? new Date(lastMealTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown time'}`
+                : 'Click to add food'
+              }
+            </Text>
+            
+            <TouchableOpacity 
+              style={[
+                styles.foodSelectionButton,
+                foodAdded && styles.foodSelectionButtonSelected
+              ]}
+              onPress={() => setFoodAdded(!foodAdded)}
+            >
+              <Text style={[
+                styles.foodSelectionButtonText,
+                foodAdded && styles.foodSelectionButtonTextSelected
+              ]}>
+                {foodAdded ? '✓ Food added!' : 'Tap to add food'}
+              </Text>
+            </TouchableOpacity>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => {
+                  console.log('[HomeScreen] ❌ Food modal cancelled');
+                  setShowFoodModal(false);
+                  setFoodAdded(false);
+                }}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalButtonSave} 
+                onPress={handleSaveFood}
+              >
+                <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Exercise Modal */}
+      <Modal
+        visible={showExerciseModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowExerciseModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {exerciseType ? 'Update Exercise' : 'Add Exercise'}
+            </Text>
+            <Text style={styles.modalSubtitle}>
+              {exerciseType 
+                ? `Current: ${exerciseType === 'starting' ? 'About to start' : 'Already completed'} ${lastExerciseTime ? 'at ' + new Date(lastExerciseTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}`
+                : 'Click to add exercise'
+              }
+            </Text>
+            
+            <View style={styles.exerciseSelectionContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedExerciseOption === 'starting' && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedExerciseOption('starting')}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedExerciseOption === 'starting' && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  About to start exercise
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedExerciseOption === 'completed' && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedExerciseOption('completed')}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedExerciseOption === 'completed' && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  I already exercised
+                </Text>
+              </TouchableOpacity>
+              
+              {exerciseType && (
+                <Text 
+                  style={[
+                    styles.exerciseRemoveText,
+                    selectedExerciseOption === null && styles.exerciseRemoveTextSelected
+                  ]}
+                  onPress={() => setSelectedExerciseOption(null)}
+                >
+                  Remove exercise entry
+                </Text>
+              )}
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => {
+                  console.log('[HomeScreen] ❌ Exercise modal cancelled');
+                  setShowExerciseModal(false);
+                  setSelectedExerciseOption(null);
+                }}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalButtonSave} 
+                onPress={handleSaveExercise}
+              >
+                <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Exercise Time Modal */}
+      <Modal
+        visible={showExerciseTimeModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowExerciseTimeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Exercise Timing</Text>
+            <Text style={styles.modalSubtitle}>
+              How long ago?
+            </Text>
+            
+            <View style={styles.timeButtonGrid}>
+              {[1, 2, 3, 4, 5, 6].map((hours) => (
+                <TouchableOpacity
+                  key={hours}
+                  style={styles.timeButton}
+                  onPress={() => handleSaveCompletedExercise(hours)}
+                >
+                  <Text style={styles.timeButtonText}>{hours}h</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.modalButtonCancel} 
+              onPress={() => {
+                console.log('[HomeScreen] ❌ Exercise time modal cancelled');
+                setShowExerciseTimeModal(false);
+                setSelectedExerciseOption(null);
+              }}
+            >
+              <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* CaffScore Info Modal */}
       <Modal
@@ -1235,8 +1882,9 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Theme.fonts.bigTitle,
+    fontSize: 42, // Made larger
     color: Theme.colors.textPrimary,
-    marginBottom: Theme.spacing.lg,
+    textAlign: 'center',
   },
   mascotContainer: {
     marginBottom: Theme.spacing.lg,
@@ -1625,49 +2273,86 @@ const styles = StyleSheet.create({
   
   // Header styles
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'row', // Changed to row for horizontal layout
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: Theme.spacing.lg,
+    paddingHorizontal: 0, // Remove padding to allow buttons at edges
   },
+  
+  // Left Column for Sleep and Stress
+  leftColumn: {
+    flexDirection: 'column',
+    alignItems: 'center', // Center align buttons in column
+    paddingLeft: Theme.spacing.sm, // Minimal padding from screen edge
+  },
+  
+  // Center Column for Title
+  centerColumn: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingTop: Theme.spacing.sm, // Small padding to center with buttons
+    paddingHorizontal: Theme.spacing.md, // More padding from buttons
+  },
+  
+  // Right Column for Food and Exercise
+  rightColumn: {
+    flexDirection: 'column',
+    alignItems: 'center', // Center align buttons in column
+    paddingRight: Theme.spacing.sm, // Minimal padding from screen edge
+  },
+  
   headerSpacer: {
     width: 80, // Same width as sleep button for centering
   },
   
-  // Sleep button styles
-  sleepButton: {
+  // Tracking button styles
+  trackingButton: {
+    backgroundColor: Theme.colors.cardBg,
+    padding: Theme.spacing.sm,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.colors.cardBg,
-    borderRadius: 12,
-    padding: Theme.spacing.sm,
-    width: 80,
-    minHeight: 60,
+    width: 60, // Smaller size
+    height: 60, // Smaller size
   },
-  sleepButtonAlert: {
-    backgroundColor: '#FFE6E6', // Light red background
+  trackingButtonAlert: {
+    backgroundColor: '#FFE5E5', // Light red background
   },
-  sleepEmoji: {
-    fontSize: 24,
-    marginBottom: 2,
+  trackingEmoji: {
+    fontSize: 24, // Slightly smaller emoji
   },
-  sleepTextContainer: {
-    alignItems: 'center',
-  },
-  sleepText: {
+  trackingText: {
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
-    fontSize: 11,
     textAlign: 'center',
+    fontSize: 11,
+    marginTop: 4,
   },
-  sleepTextAlert: {
-    color: '#D32F2F', // Red text
-    fontWeight: '600',
+  trackingTextAlert: {
+    color: Theme.colors.accentRed,
   },
+  
+  // Button label styles
+  buttonLabel: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    fontSize: 11,
+    marginTop: Theme.spacing.xs,
+    maxWidth: 70, // Constrain width for wrapping
+  },
+  buttonLabelAlert: {
+    color: Theme.colors.accentRed,
+  },
+  
   alertIcon: {
-    color: '#D32F2F', // Red exclamation mark
+    color: Theme.colors.accentRed,
     fontWeight: 'bold',
+    fontSize: 12,
   },
   
   // Score label with info icon
@@ -1881,5 +2566,143 @@ const styles = StyleSheet.create({
     color: Theme.colors.textPrimary,
   },
 
+  // NEW: Stress button styles
+  stressButtonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+  },
+  stressButton: {
+    width: (width - (Theme.spacing.lg * 2) - Theme.spacing.md) / 3 - 10, // Adjust for spacing
+    height: 50,
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 5,
+    marginHorizontal: 5,
+  },
+  stressButtonSelected: {
+    backgroundColor: Theme.colors.primaryBlue,
+  },
+  stressButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+  },
+  stressButtonTextSelected: {
+    color: 'white',
+  },
 
+  // NEW: Food button styles
+  foodSelectionButton: {
+    width: '100%',
+    height: 50, // Made smaller/less thick
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  foodSelectionButtonSelected: {
+    backgroundColor: Theme.colors.primaryGreen,
+    borderColor: Theme.colors.primaryGreen,
+  },
+  foodSelectionButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  foodSelectionButtonTextSelected: {
+    color: 'white',
+  },
+
+  // NEW: Exercise selection styles
+  exerciseSelectionContainer: {
+    flexDirection: 'column',
+    width: '100%',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+    gap: Theme.spacing.md,
+  },
+  exerciseSelectionButton: {
+    width: '100%',
+    height: 50,
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  exerciseSelectionButtonSelected: {
+    backgroundColor: Theme.colors.primaryBlue,
+    borderColor: Theme.colors.primaryBlue,
+  },
+  exerciseSelectionButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  exerciseSelectionButtonTextSelected: {
+    color: 'white',
+  },
+
+  // NEW: Time button styles
+  timeButtonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.lg,
+  },
+  timeButton: {
+    width: (width - (Theme.spacing.lg * 2) - Theme.spacing.md) / 3 - 10, // Adjust for spacing
+    height: 50,
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 5,
+    marginHorizontal: 5,
+  },
+  timeButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+  },
+
+  // Button with label container
+  buttonWithLabel: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md, // Space between button groups
+  },
+  dateSubheading: {
+    ...Theme.fonts.body,
+    fontSize: 16,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    marginTop: Theme.spacing.xs,
+  },
+  // Exercise remove text styles (replaces button)
+  exerciseRemoveText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.accentRed,
+    fontSize: 16,
+    textAlign: 'center',
+    textDecorationLine: 'underline',
+    marginTop: Theme.spacing.md,
+    padding: Theme.spacing.md,
+  },
+  exerciseRemoveTextSelected: {
+    color: Theme.colors.accentRed,
+    fontWeight: 'bold',
+  },
 }); 

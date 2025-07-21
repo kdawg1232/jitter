@@ -3,6 +3,9 @@ import {
   DrinkRecord, 
   FocusResult,
   FocusFactors,
+  StressRecord,
+  FoodRecord,
+  ExerciseRecord,
   DEFAULT_VALUES 
 } from '../types';
 import { ValidationService } from './ValidationService';
@@ -318,6 +321,133 @@ export class CaffScoreService {
   }
 
   /**
+   * Calculate stress impact on focus
+   * Higher stress = reduced focus capacity
+   */
+  private static calculateStressFactor(stressLevel: number | null): number {
+    if (stressLevel === null) {
+      // No stress data available - assume moderate stress
+      const result = 0.7;
+      console.log('[CaffScoreService] 😟 No stress data available, assuming moderate:', result.toFixed(3));
+      return result;
+    }
+    
+    // Stress scale: 1 (low stress) = 1.0, 10 (high stress) = 0.3
+    // Non-linear decline - stress has increasing impact at higher levels
+    let stressFactor;
+    if (stressLevel <= 3) {
+      // Low stress (1-3): minimal impact
+      stressFactor = 1.0 - (stressLevel - 1) * 0.05; // 1.0 to 0.9
+    } else if (stressLevel <= 6) {
+      // Moderate stress (4-6): moderate impact
+      stressFactor = 0.9 - (stressLevel - 3) * 0.1; // 0.9 to 0.6
+    } else {
+      // High stress (7-10): significant impact
+      stressFactor = 0.6 - (stressLevel - 6) * 0.075; // 0.6 to 0.3
+    }
+    
+    const result = Math.max(0.3, Math.min(1.0, stressFactor));
+    
+    console.log('[CaffScoreService] 😰 Stress factor calculation:', {
+      stressLevel,
+      stressFactor: stressFactor.toFixed(3),
+      result: result.toFixed(3)
+    });
+    
+    return result;
+  }
+
+  /**
+   * Calculate food timing impact on caffeine absorption
+   * Recent food = slower absorption, empty stomach = faster absorption
+   */
+  private static calculateFoodTimingFactor(lastMealTime: Date | null, currentTime: Date): number {
+    if (!lastMealTime) {
+      // No meal data - assume moderate impact (empty stomach)
+      const result = 1.1;
+      console.log('[CaffScoreService] 🍽️ No meal data available, assuming empty stomach:', result.toFixed(3));
+      return result;
+    }
+    
+    const hoursElapsed = (currentTime.getTime() - lastMealTime.getTime()) / (1000 * 60 * 60);
+    
+    let foodFactor;
+    if (hoursElapsed < 0.5) {
+      // Very recent meal (< 30 min): significantly slows absorption
+      foodFactor = 0.7;
+    } else if (hoursElapsed < 1.5) {
+      // Recent meal (30 min - 1.5 hrs): moderately slows absorption
+      foodFactor = 0.8 + (hoursElapsed - 0.5) * 0.2; // 0.8 to 1.0
+    } else if (hoursElapsed < 4.0) {
+      // Somewhat recent meal (1.5 - 4 hrs): slight enhancement
+      foodFactor = 1.0 + (hoursElapsed - 1.5) * 0.04; // 1.0 to 1.1
+    } else {
+      // Empty stomach (> 4 hrs): enhanced absorption
+      foodFactor = 1.1;
+    }
+    
+    const result = Math.max(0.7, Math.min(1.2, foodFactor));
+    
+    console.log('[CaffScoreService] 🍽️ Food timing factor calculation:', {
+      hoursElapsed: hoursElapsed.toFixed(2),
+      foodFactor: foodFactor.toFixed(3),
+      result: result.toFixed(3)
+    });
+    
+    return result;
+  }
+
+  /**
+   * Calculate exercise impact on caffeine metabolism and focus
+   * Recent exercise = enhanced metabolism and focus
+   */
+  private static calculateExerciseFactor(exerciseData: ExerciseRecord | null, currentTime: Date): number {
+    if (!exerciseData) {
+      // No exercise data - neutral impact
+      const result = 1.0;
+      console.log('[CaffScoreService] 🏃‍♂️ No exercise data available, neutral impact:', result.toFixed(3));
+      return result;
+    }
+    
+    const hoursElapsed = (currentTime.getTime() - exerciseData.exerciseTime.getTime()) / (1000 * 60 * 60);
+    
+    let exerciseFactor;
+    if (exerciseData.exerciseType === 'starting') {
+      // Currently exercising or just started
+      if (hoursElapsed < 2.0) {
+        // Enhanced focus and metabolism during/after exercise
+        exerciseFactor = 1.2 - hoursElapsed * 0.05; // 1.2 to 1.1
+      } else {
+        // Benefits fade after 2 hours
+        exerciseFactor = 1.0 + Math.max(0, (4.0 - hoursElapsed) * 0.025); // 1.1 to 1.0
+      }
+    } else {
+      // Completed exercise session
+      if (hoursElapsed < 1.0) {
+        // Peak benefit in first hour after exercise
+        exerciseFactor = 1.15;
+      } else if (hoursElapsed < 4.0) {
+        // Gradual decline over 4 hours
+        exerciseFactor = 1.15 - (hoursElapsed - 1.0) * 0.05; // 1.15 to 1.0
+      } else {
+        // Benefits mostly gone after 4 hours
+        exerciseFactor = 1.0;
+      }
+    }
+    
+    const result = Math.max(1.0, Math.min(1.2, exerciseFactor));
+    
+    console.log('[CaffScoreService] 🏃‍♂️ Exercise factor calculation:', {
+      exerciseType: exerciseData.exerciseType,
+      hoursElapsed: hoursElapsed.toFixed(2),
+      exerciseFactor: exerciseFactor.toFixed(3),
+      result: result.toFixed(3)
+    });
+    
+    return result;
+  }
+
+  /**
    * Calculate current caffeine activity factor
    * Uses a simplified but reliable absorption model
    */
@@ -376,7 +506,7 @@ export class CaffScoreService {
 
   /**
    * Calculate CaffScore - Current Focus Potential from Caffeine
-   * Formula: CaffScore = 100 × (C^1.0) × (R^0.2) × (T^0.3) × (F^0.3) × (A^0.6)
+   * Formula: CaffScore = 100 × (C^1.0) × (R^0.2) × (T^0.3) × (F^0.3) × (A^0.6) × (S^0.2) × (M^0.1) × (E^0.1)
    * Emphasizes current caffeine levels and activity over predictive factors
    */
   static async calculateFocusScore(
@@ -389,6 +519,21 @@ export class CaffScoreService {
     // Retrieve sleep data from storage
     const lastNightSleep = await StorageService.getLastNightSleep(userProfile.userId);
     const effectiveSleepHours = lastNightSleep || DEFAULT_VALUES.BASELINE_SLEEP_HOURS;
+    
+    // Retrieve new daily tracking data from storage
+    const todayStressLevel = await StorageService.getTodayStressLevel(userProfile.userId);
+    const todayLastMealTime = await StorageService.getTodayLastMealTime(userProfile.userId);
+    const todayExerciseData = await StorageService.getTodayExerciseData(userProfile.userId);
+    
+    console.log('[CaffScoreService] 📊 Daily tracking data:', {
+      stressLevel: todayStressLevel,
+      lastMealTime: todayLastMealTime?.toISOString(),
+      exerciseData: todayExerciseData ? {
+        type: todayExerciseData.exerciseType,
+        time: todayExerciseData.exerciseTime.toISOString(),
+        hoursAgo: todayExerciseData.hoursAgo
+      } : null
+    });
     
     // Validate inputs and filter out invalid drinks
     const validDrinks = drinks.filter(drink => {
@@ -458,30 +603,45 @@ export class CaffScoreService {
     const focus = this.calculateFocusCapacity(sleepDebt, circadian, userProfile.age);
     const currentActivity = this.calculateCurrentCaffeineActivity(validDrinks, personalizedHalfLife, currentTime);
     
+    // Calculate new daily tracking factors
+    const stressFactor = this.calculateStressFactor(todayStressLevel);
+    const foodTimingFactor = this.calculateFoodTimingFactor(todayLastMealTime, currentTime);
+    const exerciseFactor = this.calculateExerciseFactor(todayExerciseData, currentTime);
+    
     console.log('[CaffScoreService] 🧠 All focus factors calculated:', {
       currentLevel: currentLevel.toFixed(3),
       risingRate: risingRate.toFixed(3),
       tolerance: tolerance.toFixed(3),
       focus: focus.toFixed(3),
-      currentActivity: currentActivity.toFixed(3)
+      currentActivity: currentActivity.toFixed(3),
+      stressFactor: stressFactor.toFixed(3),
+      foodTimingFactor: foodTimingFactor.toFixed(3),
+      exerciseFactor: exerciseFactor.toFixed(3)
     });
     
-    // Apply the CaffScore formula - emphasizing current level over rising rate
-    // CaffScore = 100 × (C^1.2) × (R^0.1) × (T^0.3) × (F^0.3) × (A^0.5)
-    const currentLevelComponent = Math.pow(currentLevel, 1.2);  // Increased from 1.0 - current level most important
-    const risingRateComponent = Math.pow(risingRate, 0.1);      // Reduced from 0.2 - less impact of rising/declining
-    const toleranceComponent = Math.pow(tolerance, 0.3);        // Unchanged
-    const focusComponent = Math.pow(focus, 0.3);                // Unchanged  
-    const activityComponent = Math.pow(currentActivity, 0.5);   // Reduced from 0.6 - rebalance
+    // Apply the enhanced CaffScore formula with new factors
+    // CaffScore = 100 × (C^1.2) × (R^0.1) × (T^0.25) × (F^0.25) × (A^0.4) × (S^0.15) × (M^0.1) × (E^0.1)
+    const currentLevelComponent = Math.pow(currentLevel, 1.2);          // Current level most important
+    const risingRateComponent = Math.pow(risingRate, 0.1);              // Reduced impact of rate
+    const toleranceComponent = Math.pow(tolerance, 0.25);               // Slightly reduced 
+    const focusComponent = Math.pow(focus, 0.25);                       // Slightly reduced
+    const activityComponent = Math.pow(currentActivity, 0.4);           // Reduced from 0.5
+    const stressComponent = Math.pow(stressFactor, 0.15);               // New stress factor
+    const foodTimingComponent = Math.pow(foodTimingFactor, 0.1);        // New food timing factor
+    const exerciseComponent = Math.pow(exerciseFactor, 0.1);            // New exercise factor
     
-    const rawScore = 100 * currentLevelComponent * risingRateComponent * toleranceComponent * focusComponent * activityComponent;
+    const rawScore = 100 * currentLevelComponent * risingRateComponent * toleranceComponent * 
+                     focusComponent * activityComponent * stressComponent * foodTimingComponent * exerciseComponent;
     
-    console.log('[CaffScoreService] 🔢 CaffScore components:', {
+    console.log('[CaffScoreService] 🔢 Enhanced CaffScore components:', {
       currentLevelComponent: currentLevelComponent.toFixed(3),
       risingRateComponent: risingRateComponent.toFixed(3),
       toleranceComponent: toleranceComponent.toFixed(3),
       focusComponent: focusComponent.toFixed(3),
       activityComponent: activityComponent.toFixed(3),
+      stressComponent: stressComponent.toFixed(3),
+      foodTimingComponent: foodTimingComponent.toFixed(3),
+      exerciseComponent: exerciseComponent.toFixed(3),
       rawScore: rawScore.toFixed(1)
     });
     
@@ -499,7 +659,7 @@ export class CaffScoreService {
       absorption: currentActivity  // Map to existing interface for compatibility
     };
     
-    console.log('[CaffScoreService] ✅ Final CaffScore calculation complete:', {
+    console.log('[CaffScoreService] ✅ Enhanced CaffScore calculation complete:', {
       finalScore,
       validUntil: validUntil.toISOString()
     });

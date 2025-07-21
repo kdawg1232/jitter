@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { UserProfile, DrinkRecord, SleepRecord, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, FocusSession, CaffeinePlan, PlanningPreferences, STORAGE_KEYS } from '../types';
+import { UserProfile, DrinkRecord, SleepRecord, StressRecord, FoodRecord, ExerciseRecord, DayScoreRecord, StreakData, CalendarSummary, CalendarDayData, FocusSession, CaffeinePlan, PlanningPreferences, STORAGE_KEYS } from '../types';
 
 export class StorageService {
   // User Profile Operations
@@ -186,6 +186,256 @@ export class StorageService {
     } catch (error) {
       console.error('Error calculating average sleep:', error);
       return 7.5; // Fallback to baseline
+    }
+  }
+
+  // Stress Records Operations
+  static async saveStressRecords(records: StressRecord[]): Promise<void> {
+    try {
+      // Keep only last 30 days of records
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentRecords = records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate >= thirtyDaysAgo;
+      });
+
+      await AsyncStorage.setItem(STORAGE_KEYS.STRESS_RECORDS, JSON.stringify(recentRecords));
+    } catch (error) {
+      console.error('Error saving stress records:', error);
+      throw new Error('Failed to save stress records');
+    }
+  }
+
+  static async getStressRecords(): Promise<StressRecord[]> {
+    try {
+      const recordsData = await AsyncStorage.getItem(STORAGE_KEYS.STRESS_RECORDS);
+      if (!recordsData) return [];
+      
+      const records = JSON.parse(recordsData);
+      // Convert date strings back to Date objects
+      return records.map((record: any) => ({
+        ...record,
+        createdAt: new Date(record.createdAt)
+      }));
+    } catch (error) {
+      console.error('Error loading stress records:', error);
+      return [];
+    }
+  }
+
+  static async addStressRecord(record: StressRecord): Promise<void> {
+    try {
+      console.log('[StorageService] Adding stress record:', {
+        userId: record.userId,
+        date: record.date,
+        stressLevel: record.stressLevel
+      });
+      
+      const existingRecords = await this.getStressRecords();
+      
+      // Remove any existing record for the same date and user
+      const filteredRecords = existingRecords.filter(
+        existing => !(existing.date === record.date && existing.userId === record.userId)
+      );
+      
+      const wasReplacement = existingRecords.length !== filteredRecords.length;
+      if (wasReplacement) {
+        console.log('[StorageService] 🔄 Replacing existing stress record for date:', record.date);
+      }
+      
+      filteredRecords.push(record);
+      await this.saveStressRecords(filteredRecords);
+      
+      console.log('[StorageService] ✅ Stress record saved successfully. Total records:', filteredRecords.length);
+    } catch (error) {
+      console.error('[StorageService] ❌ Error adding stress record:', error);
+      throw error;
+    }
+  }
+
+  static async getTodayStressLevel(userId: string): Promise<number | null> {
+    try {
+      const records = await this.getStressRecords();
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todayRecord = records.find(
+        record => record.userId === userId && record.date === today
+      );
+      
+      return todayRecord ? todayRecord.stressLevel : null;
+    } catch (error) {
+      console.error('Error getting today stress level:', error);
+      return null;
+    }
+  }
+
+  // Food Records Operations
+  static async saveFoodRecords(records: FoodRecord[]): Promise<void> {
+    try {
+      // Keep only last 30 days of records
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentRecords = records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate >= thirtyDaysAgo;
+      });
+
+      await AsyncStorage.setItem(STORAGE_KEYS.FOOD_RECORDS, JSON.stringify(recentRecords));
+    } catch (error) {
+      console.error('Error saving food records:', error);
+      throw new Error('Failed to save food records');
+    }
+  }
+
+  static async getFoodRecords(): Promise<FoodRecord[]> {
+    try {
+      const recordsData = await AsyncStorage.getItem(STORAGE_KEYS.FOOD_RECORDS);
+      if (!recordsData) return [];
+      
+      const records = JSON.parse(recordsData);
+      // Convert date strings back to Date objects
+      return records.map((record: any) => ({
+        ...record,
+        lastMealTime: new Date(record.lastMealTime),
+        createdAt: new Date(record.createdAt)
+      }));
+    } catch (error) {
+      console.error('Error loading food records:', error);
+      return [];
+    }
+  }
+
+  static async addFoodRecord(record: FoodRecord): Promise<void> {
+    try {
+      console.log('[StorageService] Adding food record:', {
+        userId: record.userId,
+        date: record.date,
+        lastMealTime: record.lastMealTime.toISOString()
+      });
+      
+      const existingRecords = await this.getFoodRecords();
+      
+      // Remove any existing record for the same date and user
+      const filteredRecords = existingRecords.filter(
+        existing => !(existing.date === record.date && existing.userId === record.userId)
+      );
+      
+      const wasReplacement = existingRecords.length !== filteredRecords.length;
+      if (wasReplacement) {
+        console.log('[StorageService] 🔄 Replacing existing food record for date:', record.date);
+      }
+      
+      filteredRecords.push(record);
+      await this.saveFoodRecords(filteredRecords);
+      
+      console.log('[StorageService] ✅ Food record saved successfully. Total records:', filteredRecords.length);
+    } catch (error) {
+      console.error('[StorageService] ❌ Error adding food record:', error);
+      throw error;
+    }
+  }
+
+  static async getTodayLastMealTime(userId: string): Promise<Date | null> {
+    try {
+      const records = await this.getFoodRecords();
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todayRecord = records.find(
+        record => record.userId === userId && record.date === today
+      );
+      
+      return todayRecord ? todayRecord.lastMealTime : null;
+    } catch (error) {
+      console.error('Error getting today last meal time:', error);
+      return null;
+    }
+  }
+
+  // Exercise Records Operations
+  static async saveExerciseRecords(records: ExerciseRecord[]): Promise<void> {
+    try {
+      // Keep only last 30 days of records
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentRecords = records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate >= thirtyDaysAgo;
+      });
+
+      await AsyncStorage.setItem(STORAGE_KEYS.EXERCISE_RECORDS, JSON.stringify(recentRecords));
+    } catch (error) {
+      console.error('Error saving exercise records:', error);
+      throw new Error('Failed to save exercise records');
+    }
+  }
+
+  static async getExerciseRecords(): Promise<ExerciseRecord[]> {
+    try {
+      const recordsData = await AsyncStorage.getItem(STORAGE_KEYS.EXERCISE_RECORDS);
+      if (!recordsData) return [];
+      
+      const records = JSON.parse(recordsData);
+      // Convert date strings back to Date objects
+      return records.map((record: any) => ({
+        ...record,
+        exerciseTime: new Date(record.exerciseTime),
+        createdAt: new Date(record.createdAt)
+      }));
+    } catch (error) {
+      console.error('Error loading exercise records:', error);
+      return [];
+    }
+  }
+
+  static async addExerciseRecord(record: ExerciseRecord): Promise<void> {
+    try {
+      console.log('[StorageService] Adding exercise record:', {
+        userId: record.userId,
+        date: record.date,
+        exerciseType: record.exerciseType,
+        exerciseTime: record.exerciseTime.toISOString(),
+        hoursAgo: record.hoursAgo
+      });
+      
+      const existingRecords = await this.getExerciseRecords();
+      
+      // Remove any existing record for the same date and user
+      const filteredRecords = existingRecords.filter(
+        existing => !(existing.date === record.date && existing.userId === record.userId)
+      );
+      
+      const wasReplacement = existingRecords.length !== filteredRecords.length;
+      if (wasReplacement) {
+        console.log('[StorageService] 🔄 Replacing existing exercise record for date:', record.date);
+      }
+      
+      filteredRecords.push(record);
+      await this.saveExerciseRecords(filteredRecords);
+      
+      console.log('[StorageService] ✅ Exercise record saved successfully. Total records:', filteredRecords.length);
+    } catch (error) {
+      console.error('[StorageService] ❌ Error adding exercise record:', error);
+      throw error;
+    }
+  }
+
+  static async getTodayExerciseData(userId: string): Promise<ExerciseRecord | null> {
+    try {
+      const records = await this.getExerciseRecords();
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todayRecord = records.find(
+        record => record.userId === userId && record.date === today
+      );
+      
+      return todayRecord || null;
+    } catch (error) {
+      console.error('Error getting today exercise data:', error);
+      return null;
     }
   }
 
@@ -1170,6 +1420,9 @@ export class StorageService {
       await Promise.all([
         AsyncStorage.removeItem(STORAGE_KEYS.USER_PROFILE),
         AsyncStorage.removeItem(STORAGE_KEYS.SLEEP_RECORDS),
+        AsyncStorage.removeItem(STORAGE_KEYS.STRESS_RECORDS),
+        AsyncStorage.removeItem(STORAGE_KEYS.FOOD_RECORDS),
+        AsyncStorage.removeItem(STORAGE_KEYS.EXERCISE_RECORDS),
         AsyncStorage.removeItem(STORAGE_KEYS.DRINKS_HISTORY),
         AsyncStorage.removeItem(STORAGE_KEYS.DAY_SCORES),
         AsyncStorage.removeItem(STORAGE_KEYS.STREAK_DATA),
