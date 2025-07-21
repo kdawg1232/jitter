@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GetStartedScreen } from './src/screens';
 import { MainAppContainer } from './src/components';
 import { OnboardingContainer } from './src/screens/onboarding';
-import { StorageService, DeepLinkService, NotificationService } from './src/services';
+import { StorageService, DeepLinkService, NotificationService, BackgroundService } from './src/services';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'getStarted' | 'onboarding' | 'main'>('getStarted');
@@ -46,6 +46,9 @@ export default function App() {
       
       // Initialize notification service
       await NotificationService.initialize();
+
+      // Register background task for periodic CaffScore checks
+      await BackgroundService.registerCaffScoreTask();
       
       setIsLoading(false);
     };
@@ -58,7 +61,11 @@ export default function App() {
     const removeNotificationListeners = NotificationService.addNotificationListeners();
     
     // Cleanup on unmount
-    return removeNotificationListeners;
+    return () => {
+      removeNotificationListeners();
+      // Stop background service when app unmounts
+      BackgroundService.stopPeriodicCalculation();
+    };
   }, []);
 
   // Show loading screen while checking user profile

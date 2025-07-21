@@ -54,6 +54,10 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
       smoker: data.smoker!,
       pregnant: data.pregnant || false,
       oralContraceptives: data.oralContraceptives || false,
+      takesFluvoxamine: data.takesFluvoxamine || false,
+      takesCiprofloxacin: data.takesCiprofloxacin || false,
+      takesOtherCYP1A2Inhibitors: data.takesOtherCYP1A2Inhibitors || false,
+      metabolismRate: data.metabolismRate || 'medium',
       averageSleep7Days: data.lastNightSleep || 7.5,
       meanDailyCaffeineMg: data.typicalDailyCaffeine || 0, // Use collected tolerance data
       createdAt: now, // Will be updated properly in handleComplete for edit mode
@@ -85,6 +89,10 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
           smoker: onboardingData.smoker!,
           pregnant: onboardingData.pregnant || false,
           oralContraceptives: onboardingData.oralContraceptives || false,
+          takesFluvoxamine: onboardingData.takesFluvoxamine || false,
+          takesCiprofloxacin: onboardingData.takesCiprofloxacin || false,
+          takesOtherCYP1A2Inhibitors: onboardingData.takesOtherCYP1A2Inhibitors || false,
+          metabolismRate: onboardingData.metabolismRate || 'medium',
           averageSleep7Days: onboardingData.lastNightSleep || 7.5,
           meanDailyCaffeineMg: onboardingData.typicalDailyCaffeine || 0,
         };

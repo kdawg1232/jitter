@@ -104,12 +104,19 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Progress Bar and Back Button */}
+        <View style={styles.headerContainer}>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.stepIndicator}>{currentStep}/{totalSteps}</Text>
+          <View style={styles.progressBar}>
+            <View 
+              style={[
+                styles.progressFill, 
+                { width: `${(currentStep / totalSteps) * 100}%` }
+              ]} 
+            />
+          </View>
         </View>
 
         {/* Title */}
@@ -131,7 +138,7 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
                 </View>
               </View>
               <View style={styles.comingSoonButton}>
-                <Text style={styles.comingSoonButtonText}>coming soon</Text>
+                <Text style={styles.comingSoonButtonText}>set up</Text>
               </View>
             </View>
           </View>
@@ -217,26 +224,31 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Theme.spacing.lg,
   },
-  header: {
+  headerContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xl,
+    paddingTop: Theme.spacing.md,
+    paddingBottom: Theme.spacing.lg,
   },
   backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginRight: Theme.spacing.md,
+    padding: Theme.spacing.xs,
   },
   backButtonText: {
     fontSize: 24,
-    color: Theme.colors.textPrimary,
+    color: Theme.colors.primaryBlue,
   },
-  stepIndicator: {
-    ...Theme.fonts.body,
-    color: Theme.colors.textSecondary,
+  progressBar: {
+    flex: 1,
+    height: 4,
+    backgroundColor: Theme.colors.divider,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Theme.colors.primaryBlue,
+    borderRadius: 2,
   },
   title: {
     ...Theme.fonts.bigTitle,
@@ -293,7 +305,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   comingSoonButton: {
-    backgroundColor: Theme.colors.textTertiary,
+    backgroundColor: Theme.colors.primaryBlue,
     paddingHorizontal: Theme.spacing.md,
     paddingVertical: Theme.spacing.sm,
     borderRadius: Theme.borderRadius.medium,

@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, FocusResult } from '../types';
-import { StorageService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService } from '../services';
+import { StorageService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService, NotificationService, calculateStatus } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -83,76 +83,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     setShowFocusInfoModal(true);
   };
 
-  // Status calculation logic
-  const calculateStatus = (currentScore: number, prevScore: number, currentStatusText: string): { text: string; trend: 'rising' | 'declining' | 'stable'; showDot: boolean } => {
-    const scoreDifference = currentScore - prevScore;
-    const epsilon = 0.0001; // Treat values within this range as unchanged
-    
-    console.log('[HomeScreen] 📊 Status calculation:', {
-      currentScore,
-      prevScore,
-      scoreDifference,
-      currentStatusText,
-      threshold: epsilon
-    });
-
-    // If score doesn't change significantly, preserve previous status exactly
-    if (Math.abs(scoreDifference) < epsilon) {
-      console.log('[HomeScreen] ↔️ Score stable, preserving previous status:', currentStatusText);
-      return {
-        text: currentStatusText,
-        trend: 'stable',
-        showDot: true // Always show pulsing dot now
-      };
-    }
-
-    // Define score ranges
-    const isLowRange = currentScore < 25;
-    const isMediumRange = currentScore >= 25 && currentScore < 80;
-    const isHighRange = currentScore >= 80;
-
-    let newText = '';
-    let trend: 'rising' | 'declining' | 'stable' = 'stable';
-    let showDot = true;
-
-    // Handle zero score specifically
-    if (currentScore === 0) {
-      newText = 'No active caffeine detected';
-      trend = 'stable';
-      showDot = true; // Always show pulsing dot
-    }
-    // Rising trend
-    else if (scoreDifference > 0) {
-      trend = 'rising';
-      if (isLowRange) {
-        newText = 'Caffeine being absorbed';
-      } else if (isMediumRange) {
-        newText = 'Caffeine levels rising';
-      } else if (isHighRange) {
-        newText = 'Peak caffeine effect active';
-      }
-    }
-    // Declining trend
-    else if (scoreDifference < 0) {
-      trend = 'declining';
-      if (isLowRange) {
-        newText = 'Effects wearing off';
-      } else if (isMediumRange) {
-        newText = 'Caffeine leaving your system';
-      } else if (isHighRange) {
-        newText = 'Caffeine leaving your system';
-      }
-    }
-
-    console.log('[HomeScreen] ✅ New status calculated:', {
-      text: newText,
-      trend,
-      showDot,
-      scoreRange: isLowRange ? 'low' : isMediumRange ? 'medium' : 'high'
-    });
-
-    return { text: newText, trend, showDot };
-  };
+  // Status calculation logic is now provided by StatusService.calculateStatus
 
   // Load user data and initialize
   const loadUserData = async () => {
@@ -344,6 +275,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       
       // Calculate and update status
       const statusResult = calculateStatus(newScore, loadedPreviousScore, statusText);
+
+      // If the status text changed while app is in foreground, show a local notification
+      if (statusResult.text && statusResult.text !== statusText) {
+        try {
+          const notificationsEnabled = await NotificationService.areNotificationsEnabled();
+          if (notificationsEnabled) {
+            await NotificationService.scheduleLocalNotification(
+              statusResult.text,
+              statusResult.text,
+              { type: 'status_update' },
+            );
+          }
+        } catch (notifyErr) {
+          console.error('[HomeScreen] ❌ Failed to schedule status notification:', notifyErr);
+        }
+      }
+
       setStatusText(statusResult.text);
       setStatusTrend(statusResult.trend);
       setShowStatusDot(statusResult.showDot);

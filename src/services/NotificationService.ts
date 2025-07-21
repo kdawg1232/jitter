@@ -183,100 +183,12 @@ export class NotificationService {
   }
 
   /**
-   * Schedule caffeine rising notification
-   */
-  static async scheduleCaffeineRisingNotification(): Promise<void> {
-    try {
-      const preferences = await this.getNotificationPreferences();
-      
-      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
-        console.log('[NotificationService] ⚠️ Caffeine rising notifications disabled');
-        return;
-      }
-
-      await this.scheduleLocalNotification(
-        'Caffeine Levels Rising! ☕️',
-        'Your caffeine is starting to kick in.',
-        { type: 'caffeine_rising' }
-      );
-    } catch (error) {
-      console.error('[NotificationService] ❌ Failed to schedule caffeine rising notification:', error);
-    }
-  }
-
-  /**
-   * Schedule caffeine decreasing notification
-   */
-  static async scheduleCaffeineDecreasingNotification(): Promise<void> {
-    try {
-      const preferences = await this.getNotificationPreferences();
-      
-      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
-        console.log('[NotificationService] ⚠️ Caffeine decreasing notifications disabled');
-        return;
-      }
-
-      await this.scheduleLocalNotification(
-        'Caffeine Levels Decreasing 📉',
-        'Your caffeine effects are wearing off. Consider your next dose timing.',
-        { type: 'caffeine_decreasing' }
-      );
-    } catch (error) {
-      console.error('[NotificationService] ❌ Failed to schedule caffeine decreasing notification:', error);
-    }
-  }
-
-  /**
-   * Schedule caffeine zero notification
-   */
-  static async scheduleCaffeineZeroNotification(): Promise<void> {
-    try {
-      const preferences = await this.getNotificationPreferences();
-      
-      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
-        console.log('[NotificationService] ⚠️ Caffeine zero notifications disabled');
-        return;
-      }
-
-      await this.scheduleLocalNotification(
-        'Caffeine Levels Dropped to Zero! 💤',
-        'No active caffeine detected in your system. Ready for your next boost?',
-        { type: 'caffeine_zero' }
-      );
-    } catch (error) {
-      console.error('[NotificationService] ❌ Failed to schedule caffeine zero notification:', error);
-    }
-  }
-
-  /**
-   * Schedule peak caffeine notification
-   */
-  static async schedulePeakCaffeineNotification(): Promise<void> {
-    try {
-      const preferences = await this.getNotificationPreferences();
-      
-      if (!preferences.enabled || !preferences.caffeineRisingEnabled) {
-        console.log('[NotificationService] ⚠️ Peak caffeine notifications disabled');
-        return;
-      }
-
-      await this.scheduleLocalNotification(
-        'Peak Caffeine Effect! 🚀',
-        'You are in peak caffeine effect state! Optimal time for high-focus tasks.',
-        { type: 'peak_caffeine' }
-      );
-    } catch (error) {
-      console.error('[NotificationService] ❌ Failed to schedule peak caffeine notification:', error);
-    }
-  }
-
-  /**
    * Schedule setup completion notification
    */
   static async scheduleSetupNotification(): Promise<void> {
     try {
       await this.scheduleLocalNotification(
-        'Your Jitter notifications are now set up!',
+        'Your Jitter notifications are set up!',
         'You will receive alerts based on your caffeine levels.',
         { type: 'setup_complete' }
       );

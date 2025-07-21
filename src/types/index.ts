@@ -12,6 +12,14 @@ export interface UserProfile {
   pregnant: boolean;                   // Halves clearance rate
   oralContraceptives: boolean;         // 40% slower clearance (female only)
   
+  // Medication factors (Required)
+  takesFluvoxamine: boolean;           // Potent CYP1A2 inhibitor - dramatically slows caffeine metabolism
+  takesCiprofloxacin: boolean;         // CYP1A2 inhibitor - moderately slows caffeine metabolism
+  takesOtherCYP1A2Inhibitors: boolean; // Other inhibitors like cimetidine
+  
+  // Metabolism rate (Required)
+  metabolismRate: 'very_slow' | 'slow' | 'medium' | 'fast' | 'very_fast'; // Self-reported metabolism speed
+  
   // Optional genetic data
   cyp1a2Genotype?: 'fast' | 'slow' | 'unknown'; // From genetic testing
   
@@ -121,6 +129,10 @@ export interface SettingsFormData {
   smoker: boolean;
   pregnant: boolean;
   oralContraceptives: boolean;
+  takesFluvoxamine: boolean;
+  takesCiprofloxacin: boolean;
+  takesOtherCYP1A2Inhibitors: boolean;
+  metabolismRate: 'very_slow' | 'slow' | 'medium' | 'fast' | 'very_fast';
   cyp1a2Genotype: 'fast' | 'slow' | 'unknown';
 }
 

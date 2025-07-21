@@ -12,6 +12,14 @@ export interface OnboardingData {
   pregnant: boolean | null;
   oralContraceptives: boolean | null;
   
+  // Medication screening
+  takesFluvoxamine: boolean | null;
+  takesCiprofloxacin: boolean | null;
+  takesOtherCYP1A2Inhibitors: boolean | null;
+  
+  // Metabolism rate
+  metabolismRate: 'very_slow' | 'slow' | 'medium' | 'fast' | 'very_fast' | null;
+  
   // Caffeine Tolerance (Screen 4)
   typicalDailyCaffeine: number | null; // mg per day
   caffeineSource: 'coffee' | 'tea' | 'energy_drinks' | 'soda' | 'mixed' | null;
@@ -45,6 +53,10 @@ export const initialOnboardingData: OnboardingData = {
   smoker: null,
   pregnant: null,
   oralContraceptives: null,
+  takesFluvoxamine: null,
+  takesCiprofloxacin: null,
+  takesOtherCYP1A2Inhibitors: null,
+  metabolismRate: null,
   typicalDailyCaffeine: null,
   caffeineSource: null,
   lastNightSleep: null,
@@ -67,7 +79,11 @@ export const validateStep = {
   },
   
   3: (data: OnboardingData): boolean => {
-    const basicHealthComplete = data.smoker !== null;
+    const basicHealthComplete = data.smoker !== null && 
+                               data.takesFluvoxamine !== null && 
+                               data.takesCiprofloxacin !== null && 
+                               data.takesOtherCYP1A2Inhibitors !== null && 
+                               data.metabolismRate !== null;
     
     if (data.sex === 'female') {
       return basicHealthComplete && 

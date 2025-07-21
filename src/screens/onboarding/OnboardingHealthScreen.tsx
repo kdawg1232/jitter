@@ -42,6 +42,26 @@ export const OnboardingHealthScreen: React.FC<OnboardingHealthScreenProps> = ({
     onUpdateData({ oralContraceptives });
   };
 
+  const handleFluvoxamineSelection = (takesFluvoxamine: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onUpdateData({ takesFluvoxamine });
+  };
+
+  const handleCiprofloxacinSelection = (takesCiprofloxacin: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onUpdateData({ takesCiprofloxacin });
+  };
+
+  const handleOtherCYP1A2InhibitorsSelection = (takesOtherCYP1A2Inhibitors: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onUpdateData({ takesOtherCYP1A2Inhibitors });
+  };
+
+  const handleMetabolismRateSelection = (metabolismRate: 'very_slow' | 'slow' | 'medium' | 'fast' | 'very_fast') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onUpdateData({ metabolismRate });
+  };
+
   const handleNext = () => {
     if (validateStep[3](data)) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -189,11 +209,152 @@ export const OnboardingHealthScreen: React.FC<OnboardingHealthScreenProps> = ({
             </View>
           )}
 
+          {/* Medication Screening */}
+          <View style={styles.medicationSection}>
+            <Text style={styles.sectionTitle}>Basic Medication Screening</Text>
+            <Text style={styles.sectionSubtitle}>Do you take any of these medications?</Text>
+            
+            {/* Fluvoxamine Question */}
+            <View style={styles.medicationItem}>
+              <Text style={styles.medicationName}>Fluvoxamine (antidepressant)</Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesFluvoxamine === false && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleFluvoxamineSelection(false)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesFluvoxamine === false && styles.yesNoButtonTextSelected
+                  ]}>
+                    No
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesFluvoxamine === true && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleFluvoxamineSelection(true)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesFluvoxamine === true && styles.yesNoButtonTextSelected
+                  ]}>
+                    Yes
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Ciprofloxacin Question */}
+            <View style={styles.medicationItem}>
+              <Text style={styles.medicationName}>Ciprofloxacin (antibiotic)</Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesCiprofloxacin === false && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleCiprofloxacinSelection(false)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesCiprofloxacin === false && styles.yesNoButtonTextSelected
+                  ]}>
+                    No
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesCiprofloxacin === true && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleCiprofloxacinSelection(true)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesCiprofloxacin === true && styles.yesNoButtonTextSelected
+                  ]}>
+                    Yes
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Other CYP1A2 Inhibitors Question */}
+            <View style={styles.medicationItem}>
+              <Text style={styles.medicationName}>Birth control pills or Cimetidine</Text>
+              <View style={styles.buttonRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesOtherCYP1A2Inhibitors === false && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleOtherCYP1A2InhibitorsSelection(false)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesOtherCYP1A2Inhibitors === false && styles.yesNoButtonTextSelected
+                  ]}>
+                    No
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.yesNoButton,
+                    data.takesOtherCYP1A2Inhibitors === true && styles.yesNoButtonSelected
+                  ]}
+                  onPress={() => handleOtherCYP1A2InhibitorsSelection(true)}
+                >
+                  <Text style={[
+                    styles.yesNoButtonText,
+                    data.takesOtherCYP1A2Inhibitors === true && styles.yesNoButtonTextSelected
+                  ]}>
+                    Yes
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Metabolism Rate Question */}
+          <View style={styles.questionSection}>
+            <Text style={styles.questionText}>How fast is your metabolism?</Text>
+            <View style={styles.metabolismOptions}>
+              {[
+                { key: 'very_slow', label: 'Very Slow' },
+                { key: 'slow', label: 'Slow' },
+                { key: 'medium', label: 'Medium' },
+                { key: 'fast', label: 'Fast' },
+                { key: 'very_fast', label: 'Very Fast' }
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.metabolismButton,
+                    data.metabolismRate === option.key && styles.metabolismButtonSelected
+                  ]}
+                  onPress={() => handleMetabolismRateSelection(option.key as any)}
+                >
+                  <Text style={[
+                    styles.metabolismButtonText,
+                    data.metabolismRate === option.key && styles.metabolismButtonTextSelected
+                  ]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Info Note */}
           <View style={styles.infoContainer}>
             <Text style={styles.infoText}>
               These factors significantly affect how quickly your body processes caffeine, 
-              helping us provide more accurate crash predictions.
+              helping us provide more accurate predictions.
             </Text>
           </View>
         </ScrollView>
@@ -333,5 +494,59 @@ const styles = StyleSheet.create({
   },
   continueButtonTextDisabled: {
     color: Theme.colors.divider,
+  },
+  medicationSection: {
+    marginBottom: Theme.spacing.xl,
+  },
+  sectionTitle: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.md,
+    textAlign: 'center',
+  },
+  sectionSubtitle: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  medicationItem: {
+    borderRadius: Theme.borderRadius.medium,
+    padding: Theme.spacing.md,
+    marginBottom: Theme.spacing.md,
+  },
+  medicationName: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.md,
+  },
+  metabolismOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    gap: Theme.spacing.md,
+  },
+  metabolismButton: {
+    flex: 1,
+    minWidth: '30%',
+    backgroundColor: Theme.colors.white,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Theme.colors.cardStroke,
+    marginBottom: Theme.spacing.sm,
+  },
+  metabolismButtonSelected: {
+    backgroundColor: Theme.colors.primaryBlue,
+    borderColor: Theme.colors.primaryBlue,
+  },
+  metabolismButtonText: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    fontSize: 14,
+  },
+  metabolismButtonTextSelected: {
+    color: Theme.colors.white,
   },
 }); 

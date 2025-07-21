@@ -54,6 +54,10 @@ export const EditInputScreen: React.FC<EditInputScreenProps> = ({
       smoker: userProfile.smoker,
       pregnant: userProfile.pregnant,
       oralContraceptives: userProfile.oralContraceptives,
+      takesFluvoxamine: userProfile.takesFluvoxamine,
+      takesCiprofloxacin: userProfile.takesCiprofloxacin,
+      takesOtherCYP1A2Inhibitors: userProfile.takesOtherCYP1A2Inhibitors,
+      metabolismRate: userProfile.metabolismRate,
       typicalDailyCaffeine: userProfile.meanDailyCaffeineMg,
       caffeineSource: null, // This might need to be stored in profile
       lastNightSleep: userProfile.averageSleep7Days,

@@ -218,6 +218,42 @@ export class CaffScoreService {
       console.log('[CaffScoreService] 💊 Oral contraceptives factor: 0.85x');
     }
     
+    // NEW: Medication factors that affect caffeine metabolism
+    if (userProfile.takesFluvoxamine) {
+      healthMultiplier *= 0.3; // Dramatic reduction in tolerance building due to very slow clearance
+      console.log('[CaffScoreService] 💊 Fluvoxamine factor: 0.3x (potent CYP1A2 inhibitor)');
+    } else if (userProfile.takesCiprofloxacin) {
+      healthMultiplier *= 0.6; // Moderate reduction due to CYP1A2 inhibition
+      console.log('[CaffScoreService] 💊 Ciprofloxacin factor: 0.6x (CYP1A2 inhibitor)');
+    } else if (userProfile.takesOtherCYP1A2Inhibitors) {
+      healthMultiplier *= 0.75; // Mild reduction for other inhibitors
+      console.log('[CaffScoreService] 💊 Other CYP1A2 inhibitors factor: 0.75x');
+    }
+    
+    // NEW: Self-reported metabolism rate factor
+    switch (userProfile.metabolismRate) {
+      case 'very_slow':
+        healthMultiplier *= 0.7;
+        console.log('[CaffScoreService] 🐌 Very slow metabolism factor: 0.7x');
+        break;
+      case 'slow':
+        healthMultiplier *= 0.85;
+        console.log('[CaffScoreService] 🐌 Slow metabolism factor: 0.85x');
+        break;
+      case 'medium':
+        // No change - baseline
+        console.log('[CaffScoreService] ⚖️ Medium metabolism factor: 1.0x');
+        break;
+      case 'fast':
+        healthMultiplier *= 1.15;
+        console.log('[CaffScoreService] 🏃 Fast metabolism factor: 1.15x');
+        break;
+      case 'very_fast':
+        healthMultiplier *= 1.3;
+        console.log('[CaffScoreService] 🏃‍♂️ Very fast metabolism factor: 1.3x');
+        break;
+    }
+    
     // Apply health multiplier to base tolerance
     const adjustedTolerance = baseTolerance * healthMultiplier;
     
@@ -527,6 +563,37 @@ export class CaffScoreService {
     // Pregnancy significantly slows metabolism
     if (userProfile.pregnant) {
       baseHalfLife *= 2.0;
+    }
+    
+    // NEW: Medication interactions that inhibit CYP1A2
+    if (userProfile.takesFluvoxamine) {
+      // Fluvoxamine is a potent CYP1A2 inhibitor - can increase half-life 6-10x
+      baseHalfLife *= 8.0; // Conservative multiplier based on research
+    } else if (userProfile.takesCiprofloxacin) {
+      // Ciprofloxacin moderately inhibits CYP1A2
+      baseHalfLife *= 2.5;
+    } else if (userProfile.takesOtherCYP1A2Inhibitors) {
+      // Other inhibitors like cimetidine, birth control pills (already handled above)
+      baseHalfLife *= 1.5;
+    }
+    
+    // NEW: Self-reported metabolism rate
+    switch (userProfile.metabolismRate) {
+      case 'very_slow':
+        baseHalfLife *= 1.6;
+        break;
+      case 'slow':
+        baseHalfLife *= 1.3;
+        break;
+      case 'medium':
+        // No change - this is the baseline
+        break;
+      case 'fast':
+        baseHalfLife *= 0.8;
+        break;
+      case 'very_fast':
+        baseHalfLife *= 0.6;
+        break;
     }
     
     return Math.max(baseHalfLife, 2.0); // Minimum 2 hours
