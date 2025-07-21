@@ -18,6 +18,7 @@ Notifications.setNotificationHandler({
 export class NotificationService {
   private static readonly PREFERENCES_KEY = 'jitter_notification_preferences';
   private static readonly PUSH_TOKEN_KEY = 'expo_push_token';
+  private static readonly DAILY_REMINDER_ID_KEY = 'daily_data_reminder_id';
 
   /**
    * Initialize notification service
@@ -297,6 +298,9 @@ export class NotificationService {
         setupAt: new Date().toISOString(),
       }));
 
+      // Ensure daily reminder is scheduled
+      await this.scheduleDailyDataReminder();
+      
       console.log('[NotificationService] 💾 Notification preferences saved:', {
         enabled: true,
         caffeineRisingEnabled: true,
@@ -437,6 +441,47 @@ export class NotificationService {
       console.log('[NotificationService] ✅ Notifications disabled successfully');
     } catch (error) {
       console.error('[NotificationService] ❌ Failed to disable notifications:', error);
+    }
+  }
+
+  /**
+   * Schedule a repeating daily reminder at 10:00 AM local time for daily data entry.
+   */
+  static async scheduleDailyDataReminder(): Promise<string | null> {
+    try {
+      // Avoid scheduling multiple times – check if already scheduled
+      const existingId = await AsyncStorage.getItem(this.DAILY_REMINDER_ID_KEY);
+      if (existingId) {
+        console.log('[NotificationService] ⏰ Daily reminder already scheduled:', existingId);
+        return existingId;
+      }
+
+      // Ensure notification permissions are granted
+      const enabled = await this.areNotificationsEnabled();
+      if (!enabled) {
+        console.log('[NotificationService] ⚠️ Notifications not enabled – skipping daily reminder');
+        return null;
+      }
+
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Daily Jitter check-in',
+          body: 'Please update your sleep, stress, meal and exercise data for today.',
+          data: { type: 'daily_check_in' },
+        },
+        trigger: {
+          hour: 10,
+          minute: 0,
+          repeats: true,
+        } as any,
+      });
+
+      await AsyncStorage.setItem(this.DAILY_REMINDER_ID_KEY, identifier);
+      console.log('[NotificationService] ✅ Daily data reminder scheduled:', identifier);
+      return identifier;
+    } catch (error) {
+      console.error('[NotificationService] ❌ Failed to schedule daily data reminder:', error);
+      return null;
     }
   }
 } 

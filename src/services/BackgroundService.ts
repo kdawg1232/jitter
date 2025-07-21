@@ -63,11 +63,58 @@ export class BackgroundService {
   };
 
   /**
+   * Perform daily reset of tracking data at 10:00 AM local time and notify the user.
+   */
+  private static async performDailyReset(): Promise<void> {
+    try {
+      const userProfile = await StorageService.getUserProfile();
+      if (!userProfile) return; // No user yet
+
+      const now = new Date();
+      const todayKey = now.toISOString().split('T')[0];
+
+      // Only reset after 10:00 AM local time
+      if (now.getHours() < 10) return;
+
+      // Check if reset already ran today
+      const lastResetKey = `daily_reset_${userProfile.userId}`;
+      const lastResetDate = await AsyncStorage.getItem(lastResetKey);
+      if (lastResetDate === todayKey) {
+        return; // Already reset today
+      }
+
+      console.log('[BackgroundService] 🕙 Performing daily reset for', userProfile.userId);
+
+      // Clear today's tracking data so algorithm falls back to placeholders
+      await StorageService.clearDailyTrackingData(userProfile.userId);
+
+      // Send reminder notification
+      const notificationsEnabled = await NotificationService.areNotificationsEnabled();
+      if (notificationsEnabled) {
+        await NotificationService.scheduleLocalNotification(
+          'Daily Jitter check-in',
+          'Please update your sleep, stress, meal and exercise data for today.',
+          { type: 'daily_check_in' },
+        );
+      }
+
+      // Mark reset done for today
+      await AsyncStorage.setItem(lastResetKey, todayKey);
+      console.log('[BackgroundService] ✅ Daily reset completed');
+    } catch (error) {
+      console.error('[BackgroundService] ❌ Error during daily reset:', error);
+    }
+  }
+
+  /**
    * Calculate CaffScore and send notification if status changed
    */
   private static async calculateAndNotify(): Promise<void> {
     try {
       console.log('[BackgroundService] 🔄 Running CaffScore calculation');
+
+      // Perform 10AM reset & notification if needed
+      await this.performDailyReset();
 
       const userProfile = await StorageService.getUserProfile();
       if (!userProfile) {

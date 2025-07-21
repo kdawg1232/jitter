@@ -52,8 +52,12 @@ export interface StressRecord {
 
 export interface FoodRecord {
   userId: string;
-  date: string;           // YYYY-MM-DD format
-  lastMealTime: Date;     // When the last meal was consumed
+  date: string;             // YYYY-MM-DD format
+  mealTimes: Date[];        // All meal timestamps for the day (sorted ascending)
+  /**
+   * @deprecated  Use mealTimes[mealTimes.length-1] instead.
+   */
+  lastMealTime?: Date;      // Kept for backward-compatibility with older records
   createdAt: Date;
 }
 

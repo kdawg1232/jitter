@@ -73,7 +73,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [showExerciseModal, setShowExerciseModal] = useState(false);
   const [stressLevel, setStressLevel] = useState<number | null>(null);
   const [tempStressLevel, setTempStressLevel] = useState<number | null>(null);
-  const [lastMealTime, setLastMealTime] = useState<Date | null>(null);
+  const [mealTimes, setMealTimes] = useState<Date[]>([]);
+  const lastMealTime = mealTimes.length ? mealTimes[mealTimes.length - 1] : null;
+  const [last24HourMealTimes, setLast24HourMealTimes] = useState<Date[]>([]);
   const [lastExerciseTime, setLastExerciseTime] = useState<Date | null>(null);
   const [exerciseType, setExerciseType] = useState<'starting' | 'completed' | null>(null);
   const [exerciseHoursAgo, setExerciseHoursAgo] = useState<number | null>(null);
@@ -87,6 +89,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [showExerciseTimeModal, setShowExerciseTimeModal] = useState(false);
   const [selectedExerciseOption, setSelectedExerciseOption] = useState<'starting' | 'completed' | null>(null);
   const [foodAdded, setFoodAdded] = useState(false);
+  
+  // NEW: Meal timing state (similar to exercise)
+  const [selectedMealOption, setSelectedMealOption] = useState<'just_ate' | 'ate_earlier' | 'remove' | null>(null);
+  const [showMealTimeModal, setShowMealTimeModal] = useState(false);
+  const [selectedMealHoursAgo, setSelectedMealHoursAgo] = useState<number | null>(null);
+  const [customMealTime, setCustomMealTime] = useState('');
   
   // Info modal state
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -132,6 +140,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
           setStatusText(savedStatus);
           console.log('[HomeScreen] 📝 Status loaded from storage:', savedStatus);
         }
+      }
+      
+      // Load today's meal times
+      if (profile) {
+        const todayMeals = await StorageService.getTodayMealTimes(profile.userId);
+        setMealTimes(todayMeals);
+        setFoodButtonState(todayMeals.length ? 'added' : 'default');
       }
       
       // Load today's drinks and last 24 hours drinks
@@ -576,11 +591,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   };
 
   // NEW: Handle food button press
-  const handleFoodPress = () => {
+  const handleFoodPress = async () => {
     try {
-      console.log('[HomeScreen] 🍽️ Food button pressed, current state:', foodButtonState);
-      // Pre-populate with existing state if food was already added today
-      setFoodAdded(foodButtonState === 'added');
+      console.log('[HomeScreen] 🍽️ Food button pressed');
+      // Reset meal selection state
+      setSelectedMealOption(null);
+      setSelectedMealHoursAgo(null);
+      setCustomMealTime('');
+      
+      // Load last 24 hour meal times for display
+      if (userProfile) {
+        const last24hMeals = await StorageService.getLast24HourMealTimes(userProfile.userId);
+        setLast24HourMealTimes(last24hMeals);
+      }
+      
       setShowFoodModal(true);
     } catch (error) {
       console.error('[HomeScreen] ❌ Error in handleFoodPress:', error);
@@ -714,59 +738,136 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }, 0);
   };
 
-  // NEW: Save food intake
+  // NEW: Save meal based on selected option
   const handleSaveFood = async () => {
-    // Close the modal immediately so the UI is free while we persist data
+    console.log('[HomeScreen] 🔄 handleSaveFood invoked with option:', selectedMealOption);
+
+    // Always close the main food modal first
     setShowFoodModal(false);
 
-    // Run persistence a tick later so the modal overlay is gone first
-    setTimeout(async () => {
-      try {
-        console.log('[HomeScreen] 🔄 Recording food intake:', { foodAdded });
-        
-        if (foodAdded) {
-          // Adding/updating food entry
-          const now = new Date();
-          setLastMealTime(now);
-          setFoodButtonState('added');
-          
-          if (userProfile) {
-            const today = new Date().toISOString().split('T')[0];
-            
-            // Create food record
-            const foodRecord = {
-              userId: userProfile.userId,
-              date: today,
-              lastMealTime: now,
-              createdAt: new Date(),
-            };
-            
-            console.log('[HomeScreen] �� Saving food record for date:', today);
-            await StorageService.addFoodRecord(foodRecord);
-            await AsyncStorage.setItem('last_food_log_date', today);
-            
-            setLastFoodLogDate(today);
-            setNeedsFoodUpdate(false);
-            
-            console.log('[HomeScreen] ✅ Food intake saved successfully');
-          }
-        } else {
-          // Removing food entry (user decided they haven't eaten)
-          setLastMealTime(null);
+    // CASE 1: User chose to remove entry
+    if (selectedMealOption === 'remove') {
+      setTimeout(async () => {
+        try {
           setFoodButtonState('default');
-          
+          setMealTimes([]);
+          setLast24HourMealTimes([]); // Clear the recent meals display
+
           if (userProfile) {
-            // Remove today's food log date to show as needing update
+            // Clear meal records from storage for today
+            await StorageService.clearMealTimesForDate(userProfile.userId);
+            
+            // Clear the last food log date
             await AsyncStorage.removeItem('last_food_log_date');
             setLastFoodLogDate(null);
             setNeedsFoodUpdate(true);
-            
-            console.log('[HomeScreen] ✅ Food entry removed successfully');
           }
+          console.log('[HomeScreen] ✅ Meal entry removed successfully');
+        } catch (err) {
+          console.error('[HomeScreen] ❌ Error removing meal entry:', err);
+        } finally {
+          setSelectedMealOption(null);
         }
+      }, 0);
+      return;
+    }
+
+    // CASE 2: User chose "just ate" - record meal now
+    if (selectedMealOption === 'just_ate') {
+      setTimeout(async () => {
+        try {
+          const now = new Date();
+          setFoodButtonState('added');
+
+          if (userProfile) {
+            await StorageService.addMealTime(userProfile.userId, now);
+            await AsyncStorage.setItem('last_food_log_date', new Date().toISOString().split('T')[0]);
+
+            // Refresh local meal times state
+            const updatedMeals = await StorageService.getTodayMealTimes(userProfile.userId);
+            setMealTimes(updatedMeals);
+
+            setLastFoodLogDate(new Date().toISOString().split('T')[0]);
+            setNeedsFoodUpdate(false);
+            console.log('[HomeScreen] ✅ Recent meal recorded successfully');
+          }
+        } catch (err) {
+          console.error('[HomeScreen] ❌ Error recording recent meal:', err);
+        } finally {
+          setSelectedMealOption(null);
+        }
+      }, 0);
+      return;
+    }
+
+    // CASE 3: User chose "ate earlier" - show time selection modal
+    if (selectedMealOption === 'ate_earlier') {
+      setShowMealTimeModal(true);
+      return;
+    }
+
+    // If no valid option selected, just close
+    console.log('[HomeScreen] ⚠️ No meal option selected');
+  };
+
+  // NEW: Save meal time from time selection modal
+  const handleSaveMealTime = async () => {
+    console.log('[HomeScreen] 🔄 handleSaveMealTime invoked with hours ago:', selectedMealHoursAgo);
+
+    // Close time modal
+    setShowMealTimeModal(false);
+
+    // Defer heavy work
+    setTimeout(async () => {
+      try {
+        let hoursAgo: number;
+
+        if (selectedMealHoursAgo !== null) {
+          // User selected a preset option
+          hoursAgo = selectedMealHoursAgo;
+        } else if (customMealTime) {
+          // User entered custom time
+          const parsed = parseFloat(customMealTime);
+          if (isNaN(parsed) || parsed < 0 || parsed > 24) {
+            console.error('[HomeScreen] ❌ Invalid custom meal time:', customMealTime);
+            // Could show an alert here for user feedback
+            return;
+          }
+          hoursAgo = parsed;
+        } else {
+          console.error('[HomeScreen] ❌ No meal time selected');
+          return;
+        }
+
+        // Calculate actual meal time
+        const now = new Date();
+        const mealTime = new Date(now.getTime() - (hoursAgo * 60 * 60 * 1000));
         
-      } catch (error) {
-        console.error('[HomeScreen] ❌ Error saving food intake:', error);
+        setFoodButtonState('added');
+
+        if (userProfile) {
+          await StorageService.addMealTime(userProfile.userId, mealTime);
+          await AsyncStorage.setItem('last_food_log_date', new Date().toISOString().split('T')[0]);
+
+          // Refresh local meal times state
+          const updatedMeals = await StorageService.getTodayMealTimes(userProfile.userId);
+          setMealTimes(updatedMeals);
+
+          setLastFoodLogDate(new Date().toISOString().split('T')[0]);
+          setNeedsFoodUpdate(false);
+          
+          console.log('[HomeScreen] ✅ Past meal recorded successfully:', {
+            hoursAgo,
+            mealTime: mealTime.toISOString()
+          });
+        }
+      } catch (err) {
+        console.error('[HomeScreen] ❌ Error recording past meal:', err);
+      } finally {
+        // Reset state
+        setSelectedMealOption(null);
+        setSelectedMealHoursAgo(null);
+        setCustomMealTime('');
       }
     }, 0);
   };
@@ -1090,13 +1191,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         }
         
         // Load meal time for today using StorageService
-        const todayLastMealTime = await StorageService.getTodayLastMealTime(userProfile.userId);
-        if (todayLastMealTime) {
-          setLastMealTime(todayLastMealTime);
-          setFoodButtonState('added');
-        } else {
-          setFoodButtonState('default');
-        }
+        const todayMeals = await StorageService.getTodayMealTimes(userProfile.userId);
+        setMealTimes(todayMeals);
+        setFoodButtonState(todayMeals.length ? 'added' : 'default');
         
         // Load exercise data for today using StorageService
         const todayExerciseData = await StorageService.getTodayExerciseData(userProfile.userId);
@@ -1620,30 +1717,60 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {foodButtonState === 'added' ? 'Update Food' : 'Add Food'}
-            </Text>
+            <Text style={styles.modalTitle}>Add Food</Text>
             <Text style={styles.modalSubtitle}>
-              {foodButtonState === 'added' 
-                ? `Last meal: ${lastMealTime ? new Date(lastMealTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown time'}`
-                : 'Click to add food'
+              {last24HourMealTimes.length > 0 
+                ? `Recent meals (24h): ${last24HourMealTimes.slice(0, 3).map(t => new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})).join(', ')}${last24HourMealTimes.length > 3 ? '...' : ''}`
+                : 'No recent meals in last 24 hours'
               }
             </Text>
             
-            <TouchableOpacity 
-              style={[
-                styles.foodSelectionButton,
-                foodAdded && styles.foodSelectionButtonSelected
-              ]}
-              onPress={() => setFoodAdded(!foodAdded)}
-            >
-              <Text style={[
-                styles.foodSelectionButtonText,
-                foodAdded && styles.foodSelectionButtonTextSelected
-              ]}>
-                {foodAdded ? '✓ Food added!' : 'Tap to add food'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.exerciseSelectionContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealOption === 'just_ate' && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealOption('just_ate')}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealOption === 'just_ate' && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  Just ate (0-30 min ago)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealOption === 'ate_earlier' && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealOption('ate_earlier')}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealOption === 'ate_earlier' && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  Ate earlier (choose time)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealOption === 'remove' && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealOption('remove')}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealOption === 'remove' && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  Remove meal entry
+                </Text>
+              </TouchableOpacity>
+            </View>
             
             <View style={styles.modalButtons}>
               <TouchableOpacity 
@@ -1660,6 +1787,132 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               <TouchableOpacity 
                 style={styles.modalButtonSave} 
                 onPress={handleSaveFood}
+              >
+                <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Meal Time Selection Modal */}
+      <Modal
+        visible={showMealTimeModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowMealTimeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>When did you eat?</Text>
+            <Text style={styles.modalSubtitle}>Select how long ago you had your meal</Text>
+            
+            <View style={styles.exerciseSelectionContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealHoursAgo === 0.5 && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealHoursAgo(0.5)}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealHoursAgo === 0.5 && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  30 minutes ago
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealHoursAgo === 1 && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealHoursAgo(1)}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealHoursAgo === 1 && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  1 hour ago
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealHoursAgo === 2 && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealHoursAgo(2)}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealHoursAgo === 2 && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  2 hours ago
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealHoursAgo === 3 && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealHoursAgo(3)}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealHoursAgo === 3 && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  3 hours ago
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.exerciseSelectionButton,
+                  selectedMealHoursAgo === 4 && styles.exerciseSelectionButtonSelected
+                ]}
+                onPress={() => setSelectedMealHoursAgo(4)}
+              >
+                <Text style={[
+                  styles.exerciseSelectionButtonText,
+                  selectedMealHoursAgo === 4 && styles.exerciseSelectionButtonTextSelected
+                ]}>
+                  4 hours ago
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Custom time input */}
+            <View style={styles.exerciseSelectionContainer}>
+              <Text style={styles.modalSubtitle}>Or enter custom time (hours ago):</Text>
+              <TextInput
+                style={styles.customTimeInput}
+                value={customMealTime}
+                onChangeText={setCustomMealTime}
+                placeholder="e.g., 1.5"
+                keyboardType="decimal-pad"
+                maxLength={4}
+              />
+            </View>
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity 
+                style={styles.modalButtonCancel} 
+                onPress={() => {
+                  console.log('[HomeScreen] ❌ Meal time modal cancelled');
+                  setShowMealTimeModal(false);
+                  setSelectedMealHoursAgo(null);
+                  setCustomMealTime('');
+                }}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalButtonSave} 
+                onPress={handleSaveMealTime}
               >
                 <Text style={styles.modalButtonTextSave}>Save</Text>
               </TouchableOpacity>

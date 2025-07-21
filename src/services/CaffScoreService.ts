@@ -361,16 +361,19 @@ export class CaffScoreService {
    * Calculate food timing impact on caffeine absorption
    * Recent food = slower absorption, empty stomach = faster absorption
    */
-  private static calculateFoodTimingFactor(lastMealTime: Date | null, currentTime: Date): number {
-    if (!lastMealTime) {
+  private static calculateFoodTimingFactor(recentMealTimes: Date[], currentTime: Date): number {
+    if (recentMealTimes.length === 0) {
       // No meal data - assume moderate impact (empty stomach)
       const result = 1.1;
       console.log('[CaffScoreService] 🍽️ No meal data available, assuming empty stomach:', result.toFixed(3));
       return result;
     }
-    
+
+    // Sort descending so index 0 is most recent
+    const sorted = [...recentMealTimes].sort((a, b) => b.getTime() - a.getTime());
+    const lastMealTime = sorted[0];
     const hoursElapsed = (currentTime.getTime() - lastMealTime.getTime()) / (1000 * 60 * 60);
-    
+
     let foodFactor;
     if (hoursElapsed < 0.5) {
       // Very recent meal (< 30 min): significantly slows absorption
@@ -385,15 +388,23 @@ export class CaffScoreService {
       // Empty stomach (> 4 hrs): enhanced absorption
       foodFactor = 1.1;
     }
-    
-    const result = Math.max(0.7, Math.min(1.2, foodFactor));
-    
+
+    // If there were two or more meals within last 4 hours, compound slowing effect (multiply by 0.9)
+    const mealsWithin4h = sorted.filter(t => (currentTime.getTime() - t.getTime()) / (1000 * 60 * 60) < 4);
+    if (mealsWithin4h.length >= 2) {
+      foodFactor *= 0.9;
+      console.log('[CaffScoreService] 🍽️ Multiple meals within 4h detected – applying additional slowdown (×0.9)');
+    }
+
+    const result = Math.max(0.6, Math.min(1.2, foodFactor));
+
     console.log('[CaffScoreService] 🍽️ Food timing factor calculation:', {
       hoursElapsed: hoursElapsed.toFixed(2),
+      mealsIn4h: mealsWithin4h.length,
       foodFactor: foodFactor.toFixed(3),
       result: result.toFixed(3)
     });
-    
+
     return result;
   }
 
@@ -522,12 +533,12 @@ export class CaffScoreService {
     
     // Retrieve new daily tracking data from storage
     const todayStressLevel = await StorageService.getTodayStressLevel(userProfile.userId);
-    const todayLastMealTime = await StorageService.getTodayLastMealTime(userProfile.userId);
+    const recentMealTimes = await StorageService.getRecentMealTimes(userProfile.userId, 24); // 24-hour window for meal data
     const todayExerciseData = await StorageService.getTodayExerciseData(userProfile.userId);
     
     console.log('[CaffScoreService] 📊 Daily tracking data:', {
       stressLevel: todayStressLevel,
-      lastMealTime: todayLastMealTime?.toISOString(),
+      recentMealTimes: recentMealTimes.map(t => t.toISOString()),
       exerciseData: todayExerciseData ? {
         type: todayExerciseData.exerciseType,
         time: todayExerciseData.exerciseTime.toISOString(),
@@ -605,7 +616,7 @@ export class CaffScoreService {
     
     // Calculate new daily tracking factors
     const stressFactor = this.calculateStressFactor(todayStressLevel);
-    const foodTimingFactor = this.calculateFoodTimingFactor(todayLastMealTime, currentTime);
+    const foodTimingFactor = this.calculateFoodTimingFactor(recentMealTimes, currentTime);
     const exerciseFactor = this.calculateExerciseFactor(todayExerciseData, currentTime);
     
     console.log('[CaffScoreService] 🧠 All focus factors calculated:', {

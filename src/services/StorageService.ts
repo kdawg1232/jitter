@@ -296,58 +296,148 @@ export class StorageService {
       if (!recordsData) return [];
       
       const records = JSON.parse(recordsData);
-      // Convert date strings back to Date objects
-      return records.map((record: any) => ({
-        ...record,
-        lastMealTime: new Date(record.lastMealTime),
-        createdAt: new Date(record.createdAt)
-      }));
+      // Convert date strings back to Date objects and normalise legacy structure
+      return records.map((record: any) => {
+        // Legacy records may only have lastMealTime – convert to mealTimes array
+        let mealTimes: Date[] = [];
+        if (record.mealTimes && Array.isArray(record.mealTimes)) {
+          mealTimes = record.mealTimes.map((t: string) => new Date(t));
+        }
+        if (record.lastMealTime) {
+          const lm = new Date(record.lastMealTime);
+          if (!mealTimes.find((d: Date) => d.getTime() === lm.getTime())) {
+            mealTimes.push(lm);
+          }
+        }
+
+        // Sort ascending
+        mealTimes.sort((a: Date, b: Date) => a.getTime() - b.getTime());
+        
+        return {
+          userId: record.userId,
+          date: record.date,
+          mealTimes,
+          lastMealTime: mealTimes.length > 0 ? mealTimes[mealTimes.length - 1] : undefined,
+          createdAt: new Date(record.createdAt),
+        } as FoodRecord;
+      });
     } catch (error) {
       console.error('Error loading food records:', error);
       return [];
     }
   }
 
-  static async addFoodRecord(record: FoodRecord): Promise<void> {
+  /**
+   * Record a new meal time for today (or the provided date).
+   */
+  static async addMealTime(userId: string, mealTime: Date = new Date()): Promise<void> {
     try {
-      console.log('[StorageService] Adding food record:', {
-        userId: record.userId,
-        date: record.date,
-        lastMealTime: record.lastMealTime.toISOString()
-      });
-      
+      const dateKey = mealTime.toISOString().split('T')[0];
+
       const existingRecords = await this.getFoodRecords();
-      
-      // Remove any existing record for the same date and user
-      const filteredRecords = existingRecords.filter(
-        existing => !(existing.date === record.date && existing.userId === record.userId)
-      );
-      
-      const wasReplacement = existingRecords.length !== filteredRecords.length;
-      if (wasReplacement) {
-        console.log('[StorageService] 🔄 Replacing existing food record for date:', record.date);
+      const recordIndex = existingRecords.findIndex(r => r.userId === userId && r.date === dateKey);
+
+      if (recordIndex !== -1) {
+        // Update existing record
+        const record = existingRecords[recordIndex];
+        record.mealTimes.push(mealTime);
+        record.mealTimes.sort((a, b) => a.getTime() - b.getTime());
+        record.lastMealTime = record.mealTimes[record.mealTimes.length - 1];
+        existingRecords[recordIndex] = record;
+        console.log('[StorageService] 🍽️ Appended meal time to existing record:', mealTime.toISOString());
+      } else {
+        // Create new record
+        const newRecord: FoodRecord = {
+          userId,
+          date: dateKey,
+          mealTimes: [mealTime],
+          lastMealTime: mealTime,
+          createdAt: new Date(),
+        };
+        existingRecords.push(newRecord);
+        console.log('[StorageService] 🍽️ Created new food record:', newRecord);
       }
-      
-      filteredRecords.push(record);
-      await this.saveFoodRecords(filteredRecords);
-      
-      console.log('[StorageService] ✅ Food record saved successfully. Total records:', filteredRecords.length);
+
+      await this.saveFoodRecords(existingRecords);
     } catch (error) {
-      console.error('[StorageService] ❌ Error adding food record:', error);
+      console.error('[StorageService] ❌ Error recording meal time:', error);
       throw error;
     }
   }
 
-  static async getTodayLastMealTime(userId: string): Promise<Date | null> {
+  /**
+   * Get all meal times for today.
+   */
+  static async getTodayMealTimes(userId: string): Promise<Date[]> {
+    const today = new Date().toISOString().split('T')[0];
+    const records = await this.getFoodRecords();
+    const todayRecord = records.find(r => r.userId === userId && r.date === today);
+    return todayRecord ? todayRecord.mealTimes : [];
+  }
+
+  /**
+   * Get recent meal times within a specified window in hours.
+   */
+  static async getRecentMealTimes(userId: string, hoursWindow: number = 6): Promise<Date[]> {
+    const allRecords = await this.getFoodRecords();
+    const cutoff = new Date();
+    cutoff.setHours(cutoff.getHours() - hoursWindow);
+
+    const recentTimes: Date[] = [];
+    allRecords.forEach(r => {
+      if (r.userId !== userId) return;
+      r.mealTimes.forEach(t => {
+        if (t >= cutoff) {
+          recentTimes.push(t);
+        }
+      });
+    });
+
+    // Sort descending (latest first)
+    recentTimes.sort((a, b) => b.getTime() - a.getTime());
+    return recentTimes;
+  }
+
+  /**
+   * Get meal times from the last 24 hours specifically.
+   */
+  static async getLast24HourMealTimes(userId: string): Promise<Date[]> {
+    return this.getRecentMealTimes(userId, 24);
+  }
+
+  /**
+   * Clear all meal times for a specific user and date.
+   */
+  static async clearMealTimesForDate(userId: string, date: string = new Date().toISOString().split('T')[0]): Promise<void> {
     try {
-      const records = await this.getFoodRecords();
-      const today = new Date().toISOString().split('T')[0];
-      
-      const todayRecord = records.find(
-        record => record.userId === userId && record.date === today
+      const existingRecords = await this.getFoodRecords();
+      const filteredRecords = existingRecords.filter(
+        r => !(r.userId === userId && r.date === date)
       );
       
-      return todayRecord ? todayRecord.lastMealTime : null;
+      const wasRemoved = existingRecords.length !== filteredRecords.length;
+      if (wasRemoved) {
+        await this.saveFoodRecords(filteredRecords);
+        console.log('[StorageService] 🗑️ Cleared meal times for user:', userId, 'date:', date);
+      } else {
+        console.log('[StorageService] ℹ️ No meal times found to clear for user:', userId, 'date:', date);
+      }
+    } catch (error) {
+      console.error('[StorageService] ❌ Error clearing meal times:', error);
+      throw error;
+    }
+  }
+
+  // Adjusted legacy method names
+  static async addFoodRecord(record: FoodRecord): Promise<void> {
+    console.warn('[StorageService] ⚠️ addFoodRecord is deprecated. Use addMealTime instead.');
+    await this.addMealTime(record.userId, record.lastMealTime || new Date());
+  }
+
+  static async getTodayLastMealTime(userId: string): Promise<Date | null> {
+    try {
+      const times = await this.getTodayMealTimes(userId);
+      return times.length ? times[times.length - 1] : null;
     } catch (error) {
       console.error('Error getting today last meal time:', error);
       return null;
@@ -1411,6 +1501,63 @@ export class StorageService {
     } catch (error) {
       console.error('[StorageService] ❌ Error loading current caffeine status:', error);
       return "No active caffeine detected";
+    }
+  }
+
+  static async clearDailyTrackingData(userId: string): Promise<void> {
+    try {
+      console.log('[StorageService] 🧹 Clearing daily tracking data for user:', userId);
+
+      // Determine date keys
+      const today = new Date();
+      const todayKey = today.toISOString().split('T')[0];
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayKey = yesterday.toISOString().split('T')[0];
+
+      // --- Sleep (yesterday) ---
+      const sleepRecords = await this.getSleepRecords();
+      const filteredSleep = sleepRecords.filter(
+        r => !(r.userId === userId && r.date === yesterdayKey),
+      );
+      if (filteredSleep.length !== sleepRecords.length) {
+        console.log('[StorageService] 🗑️ Removed last night sleep record');
+        await this.saveSleepRecords(filteredSleep);
+      }
+
+      // --- Stress (today) ---
+      const stressRecords = await this.getStressRecords();
+      const filteredStress = stressRecords.filter(
+        r => !(r.userId === userId && r.date === todayKey),
+      );
+      if (filteredStress.length !== stressRecords.length) {
+        console.log('[StorageService] 🗑️ Removed today stress record');
+        await this.saveStressRecords(filteredStress);
+      }
+
+      // --- Food/Meal (today) ---
+      const foodRecords = await this.getFoodRecords();
+      const filteredFood = foodRecords.filter(
+        r => !(r.userId === userId && r.date === todayKey),
+      );
+      if (filteredFood.length !== foodRecords.length) {
+        console.log('[StorageService] 🗑️ Removed today food record');
+        await this.saveFoodRecords(filteredFood);
+      }
+
+      // --- Exercise (today) ---
+      const exerciseRecords = await this.getExerciseRecords();
+      const filteredExercise = exerciseRecords.filter(
+        r => !(r.userId === userId && r.date === todayKey),
+      );
+      if (filteredExercise.length !== exerciseRecords.length) {
+        console.log('[StorageService] 🗑️ Removed today exercise record');
+        await this.saveExerciseRecords(filteredExercise);
+      }
+
+      console.log('[StorageService] ✅ Daily tracking data cleared for user:', userId);
+    } catch (error) {
+      console.error('[StorageService] ❌ Error clearing daily tracking data:', error);
     }
   }
 
