@@ -49,13 +49,44 @@ export class CaffScoreService {
   }
 
   /**
+   * Detect if we're in the sustained focus zone (plateau phase)
+   */
+  private static isInSustainedFocusZone(
+    currentLevel: number,
+    peakLevel: number, 
+    drinks: DrinkRecord[],
+    currentTime: Date
+  ): boolean {
+    if (drinks.length === 0 || peakLevel <= 0) return false;
+    
+    // Find the most recent significant drink (>30mg) to calculate time elapsed
+    const significantDrinks = drinks.filter(d => d.actualCaffeineConsumed >= 30);
+    if (significantDrinks.length === 0) return false;
+    
+    const mostRecentDrink = significantDrinks.reduce((latest, drink) => 
+      drink.timestamp > latest.timestamp ? drink : latest
+    );
+    
+    const hoursElapsed = (currentTime.getTime() - mostRecentDrink.timestamp.getTime()) / (1000 * 60 * 60);
+    const levelRatio = currentLevel / Math.max(peakLevel, 1);
+    
+    // Sustained focus zone criteria:
+    const timeInRange = hoursElapsed >= 0.5 && hoursElapsed <= 4.0; // 30min - 4hrs after consumption
+    const levelInRange = levelRatio >= 0.6; // Still above 60% of peak
+    const hasSignificantCaffeine = currentLevel >= 30; // Minimum threshold for effects
+    
+    return timeInRange && levelInRange && hasSignificantCaffeine;
+  }
+
+  /**
    * Calculate rising rate factor for focus
-   * Moderate rise is optimal, too fast = overstimulating
+   * Enhanced with plateau detection for sustained focus recognition
    */
   private static calculateFocusRisingRate(
     drinks: DrinkRecord[], 
     halfLife: number, 
-    currentTime: Date
+    currentTime: Date,
+    peakLevel: number
   ): number {
     const now = currentTime.getTime();
     const tenMinutesAgo = now - (10 * 60 * 1000);
@@ -70,13 +101,18 @@ export class CaffScoreService {
     const earlierRate = (level10MinAgo - level20MinAgo) / 10;
     const avgRate = (recentRate + earlierRate) / 2;
     
+    // Check if we're in sustained focus zone for enhanced logging
+    const inSustainedZone = this.isInSustainedFocusZone(currentLevel, peakLevel, drinks, currentTime);
+    
     console.log('[CaffScoreService] 📊 Rising rate calculation:', {
       currentLevel: currentLevel.toFixed(1),
       level10MinAgo: level10MinAgo.toFixed(1),
       level20MinAgo: level20MinAgo.toFixed(1),
       recentRate: recentRate.toFixed(2),
       earlierRate: earlierRate.toFixed(2),
-      avgRate: avgRate.toFixed(2)
+      avgRate: avgRate.toFixed(2),
+      peakLevel: peakLevel.toFixed(1),
+      sustainedFocusZone: inSustainedZone
     });
     
     // Optimal rise rate for focus: 2-5 mg/min
@@ -84,10 +120,31 @@ export class CaffScoreService {
     const optimalMaxRate = 5;
     
     if (avgRate < 0) {
-      // Declining = suboptimal for focus
-      const result = Math.max(0.2, 0.5 + avgRate * 0.1);
-      console.log('[CaffScoreService] 📉 Declining rate, suboptimal:', result.toFixed(3));
-      return result;
+      // Check if we're in sustained focus zone during decline
+      const inSustainedZone = this.isInSustainedFocusZone(currentLevel, peakLevel, drinks, currentTime);
+      
+      if (inSustainedZone) {
+        // Slow decline during plateau = sustained excellent focus
+        if (avgRate >= -2.0) { // Slow decline (< 2mg/min)
+          const result = 0.85;
+          console.log('[CaffScoreService] 🎯 Sustained focus zone (slow decline):', result.toFixed(3));
+          return result;
+        } else if (avgRate >= -5.0) { // Moderate decline  
+          const result = 0.70;
+          console.log('[CaffScoreService] ⚖️ Sustained focus zone (moderate decline):', result.toFixed(3));
+          return result;
+        } else {
+          // Fast decline = approaching crash even in plateau
+          const result = 0.45;
+          console.log('[CaffScoreService] 📉 Fast decline, approaching crash:', result.toFixed(3));
+          return result;
+        }
+      } else {
+        // Outside plateau zone - use current penalty logic
+        const result = Math.max(0.2, 0.5 + avgRate * 0.1);
+        console.log('[CaffScoreService] 📉 Declining rate, suboptimal:', result.toFixed(3));
+        return result;
+      }
     } else if (avgRate <= optimalMinRate) {
       // Slow rise = building focus
       const result = 0.3 + (avgRate / optimalMinRate) * 0.4;
@@ -351,7 +408,7 @@ export class CaffScoreService {
     
     // Calculate all focus factors
     const currentLevel = this.calculateFocusLevelFactor(currentCaffeineLevel, toleranceThreshold);
-    const risingRate = this.calculateFocusRisingRate(validDrinks, personalizedHalfLife, currentTime);
+    const risingRate = this.calculateFocusRisingRate(validDrinks, personalizedHalfLife, currentTime, peakCaffeineLevel);
     const tolerance = this.calculateFocusTolerance(userProfile.meanDailyCaffeineMg, userProfile.weightKg, userProfile);
     
     // Calculate sleep debt and circadian factors
@@ -373,13 +430,13 @@ export class CaffScoreService {
       currentActivity: currentActivity.toFixed(3)
     });
     
-    // Apply the CaffScore formula - emphasizing current impact
-    // CaffScore = 100 × (C^1.0) × (R^0.2) × (T^0.3) × (F^0.3) × (A^0.6)
-    const currentLevelComponent = Math.pow(currentLevel, 1.0);  // Increased weight
-    const risingRateComponent = Math.pow(risingRate, 0.2);      // Reduced weight 
-    const toleranceComponent = Math.pow(tolerance, 0.3);
-    const focusComponent = Math.pow(focus, 0.3);                // Reduced weight
-    const activityComponent = Math.pow(currentActivity, 0.6);   // Increased weight
+    // Apply the CaffScore formula - emphasizing current level over rising rate
+    // CaffScore = 100 × (C^1.2) × (R^0.1) × (T^0.3) × (F^0.3) × (A^0.5)
+    const currentLevelComponent = Math.pow(currentLevel, 1.2);  // Increased from 1.0 - current level most important
+    const risingRateComponent = Math.pow(risingRate, 0.1);      // Reduced from 0.2 - less impact of rising/declining
+    const toleranceComponent = Math.pow(tolerance, 0.3);        // Unchanged
+    const focusComponent = Math.pow(focus, 0.3);                // Unchanged  
+    const activityComponent = Math.pow(currentActivity, 0.5);   // Reduced from 0.6 - rebalance
     
     const rawScore = 100 * currentLevelComponent * risingRateComponent * toleranceComponent * focusComponent * activityComponent;
     

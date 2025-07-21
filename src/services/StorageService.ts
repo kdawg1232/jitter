@@ -1117,6 +1117,53 @@ export class StorageService {
     }
   }
 
+  // Current Caffeine Status Operations
+  static async saveCurrentCaffeineStatus(userId: string, status: string): Promise<void> {
+    try {
+      const data = {
+        userId,
+        status,
+        savedAt: new Date().toISOString()
+      };
+      await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_CAFFEINE_STATUS, JSON.stringify(data));
+      console.log('[StorageService] ✅ Current caffeine status saved:', {
+        userId,
+        status,
+        savedAt: data.savedAt
+      });
+    } catch (error) {
+      console.error('[StorageService] ❌ Error saving current caffeine status:', error);
+      throw error;
+    }
+  }
+
+  static async getCurrentCaffeineStatus(userId: string): Promise<string> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_CAFFEINE_STATUS);
+      if (!data) {
+        console.log('[StorageService] ⚠️ No current caffeine status found, returning default');
+        return "No active caffeine detected";
+      }
+      
+      const parsed = JSON.parse(data);
+      if (parsed.userId !== userId) {
+        console.log('[StorageService] ⚠️ Current caffeine status is for different user, returning default');
+        return "No active caffeine detected";
+      }
+      
+      console.log('[StorageService] ✅ Current caffeine status loaded:', {
+        userId: parsed.userId,
+        status: parsed.status,
+        savedAt: parsed.savedAt
+      });
+      
+      return parsed.status || "No active caffeine detected";
+    } catch (error) {
+      console.error('[StorageService] ❌ Error loading current caffeine status:', error);
+      return "No active caffeine detected";
+    }
+  }
+
   // Utility Operations
   static async clearAllData(): Promise<void> {
     try {
@@ -1129,7 +1176,8 @@ export class StorageService {
         AsyncStorage.removeItem(STORAGE_KEYS.FOCUS_SESSIONS),
         AsyncStorage.removeItem(STORAGE_KEYS.CAFFEINE_PLANS),
         AsyncStorage.removeItem(STORAGE_KEYS.PLANNING_PREFERENCES),
-        AsyncStorage.removeItem(STORAGE_KEYS.PREVIOUS_CAFF_SCORE)
+        AsyncStorage.removeItem(STORAGE_KEYS.PREVIOUS_CAFF_SCORE),
+        AsyncStorage.removeItem(STORAGE_KEYS.CURRENT_CAFFEINE_STATUS)
       ]);
     } catch (error) {
       console.error('Error clearing all data:', error);

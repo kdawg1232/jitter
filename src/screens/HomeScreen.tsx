@@ -13,13 +13,12 @@ import {
   Keyboard,
   Modal,
   AppState,
-  Animated,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, FocusResult } from '../types';
-import { StorageService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService, NotificationService } from '../services';
+import { StorageService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService } from '../services';
 
 const { width } = Dimensions.get('window');
 
@@ -52,15 +51,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [lastNightSleep, setLastNightSleep] = useState<number>(7.5);
   const [caffScore, setCaffScore] = useState(0); // CaffScore
-  const [caffResult, setCaffResult] = useState<FocusResult | null>(null); // Full CaffScore result for status detection
+  const [caffResult, setCaffResult] = useState<FocusResult | null>(null); // Full CaffScore result
   const [previousCaffScore, setPreviousCaffScore] = useState(0); // Track previous score to detect trends
-  const [previousCaffeineStatus, setPreviousCaffeineStatus] = useState<string>(""); // Track status changes for notifications
-  const [lastNotificationSent, setLastNotificationSent] = useState<string>(""); // Prevent duplicate notifications
-  const [currentCaffeineStatus, setCurrentCaffeineStatus] = useState<string>("No active caffeine detected"); // Current status for UI display
-  const [isInitialStatusLoad, setIsInitialStatusLoad] = useState<boolean>(true); // Track if this is initial load vs actual change
-  const [pendingNotificationTimeout, setPendingNotificationTimeout] = useState<NodeJS.Timeout | null>(null); // Track pending notification
   const [isAppReturningFromBackground, setIsAppReturningFromBackground] = useState<boolean>(false); // Track app state transitions
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState<boolean>(false); // Track if initial data loading is complete
+  
+  // Status state
+  const [statusText, setStatusText] = useState<string>(''); // Current status message
+  const [statusTrend, setStatusTrend] = useState<'rising' | 'declining' | 'stable'>('stable'); // Current trend
+  const [showStatusDot, setShowStatusDot] = useState<boolean>(false); // Animation control
   
   // Sleep tracking state
   const [showSleepModal, setShowSleepModal] = useState(false);
@@ -84,6 +83,77 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     setShowFocusInfoModal(true);
   };
 
+  // Status calculation logic
+  const calculateStatus = (currentScore: number, prevScore: number, currentStatusText: string): { text: string; trend: 'rising' | 'declining' | 'stable'; showDot: boolean } => {
+    const scoreDifference = currentScore - prevScore;
+    const epsilon = 0.0001; // Treat values within this range as unchanged
+    
+    console.log('[HomeScreen] 📊 Status calculation:', {
+      currentScore,
+      prevScore,
+      scoreDifference,
+      currentStatusText,
+      threshold: epsilon
+    });
+
+    // If score doesn't change significantly, preserve previous status exactly
+    if (Math.abs(scoreDifference) < epsilon) {
+      console.log('[HomeScreen] ↔️ Score stable, preserving previous status:', currentStatusText);
+      return {
+        text: currentStatusText,
+        trend: 'stable',
+        showDot: true // Always show pulsing dot now
+      };
+    }
+
+    // Define score ranges
+    const isLowRange = currentScore < 25;
+    const isMediumRange = currentScore >= 25 && currentScore < 80;
+    const isHighRange = currentScore >= 80;
+
+    let newText = '';
+    let trend: 'rising' | 'declining' | 'stable' = 'stable';
+    let showDot = true;
+
+    // Handle zero score specifically
+    if (currentScore === 0) {
+      newText = 'No active caffeine detected';
+      trend = 'stable';
+      showDot = true; // Always show pulsing dot
+    }
+    // Rising trend
+    else if (scoreDifference > 0) {
+      trend = 'rising';
+      if (isLowRange) {
+        newText = 'Caffeine being absorbed';
+      } else if (isMediumRange) {
+        newText = 'Caffeine levels rising';
+      } else if (isHighRange) {
+        newText = 'Peak caffeine effect active';
+      }
+    }
+    // Declining trend
+    else if (scoreDifference < 0) {
+      trend = 'declining';
+      if (isLowRange) {
+        newText = 'Effects wearing off';
+      } else if (isMediumRange) {
+        newText = 'Caffeine leaving your system';
+      } else if (isHighRange) {
+        newText = 'Caffeine leaving your system';
+      }
+    }
+
+    console.log('[HomeScreen] ✅ New status calculated:', {
+      text: newText,
+      trend,
+      showDot,
+      scoreRange: isLowRange ? 'low' : isMediumRange ? 'medium' : 'high'
+    });
+
+    return { text: newText, trend, showDot };
+  };
+
   // Load user data and initialize
   const loadUserData = async () => {
     try {
@@ -103,6 +173,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         const prevScore = await StorageService.getPreviousCaffScore(profile.userId);
         setPreviousCaffScore(prevScore);
         console.log('[HomeScreen] 📊 Previous CaffScore loaded:', prevScore);
+        
+        // Load saved status
+        const savedStatus = await AsyncStorage.getItem(`status_${profile.userId}`);
+        if (savedStatus) {
+          setStatusText(savedStatus);
+          console.log('[HomeScreen] 📝 Status loaded from storage:', savedStatus);
+        }
       }
       
       // Load today's drinks and last 24 hours drinks
@@ -236,10 +313,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     try {
       console.log('[HomeScreen] 🎯 Calculating CaffScore...');
       
+      // Always fetch fresh drinks data to avoid stale state issues
+      const freshLast24HoursDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+      
+      console.log('[HomeScreen] 📊 Fresh drinks data loaded:', {
+        count: freshLast24HoursDrinks.length,
+        totalCaffeine: freshLast24HoursDrinks.reduce((sum, d) => sum + d.actualCaffeineConsumed, 0)
+      });
+      
       // Calculate CaffScore using the real algorithm (sleep data retrieved internally)
       const result = await CaffScoreService.calculateFocusScore(
         userProfile,
-        last24HoursDrinks // Use 24-hour drinks for algorithm accuracy
+        freshLast24HoursDrinks // Use fresh 24-hour drinks for algorithm accuracy
       );
 
       console.log('[HomeScreen] ✅ CaffScore calculated:', result.score);
@@ -257,15 +342,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       setCaffScore(newScore);
       setCaffResult(result);
       
+      // Calculate and update status
+      const statusResult = calculateStatus(newScore, loadedPreviousScore, statusText);
+      setStatusText(statusResult.text);
+      setStatusTrend(statusResult.trend);
+      setShowStatusDot(statusResult.showDot);
+
+      // Persist status for future sessions
+      if (userProfile) {
+        await AsyncStorage.setItem(`status_${userProfile.userId}`, statusResult.text);
+      }
+      
       // Persist current score as previous score for next app session
       await StorageService.savePreviousCaffScore(userProfile.userId, newScore);
       
       // Update previous score state for next calculation
       setPreviousCaffScore(newScore);
-      
-      // Calculate status with correct previous score from storage
-      const status = calculateCaffeineStatusDirect(result, newScore, loadedPreviousScore);
-      setCurrentCaffeineStatus(status);
     } catch (error) {
       console.error('[HomeScreen] ❌ Error calculating CaffScore:', error);
       setCaffScore(0);
@@ -273,158 +365,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }
   };
 
-  // Calculate dynamic caffeine status based on CaffScore range + trend (simplified approach)
-  const calculateCaffeineStatus = (): string => {
-    // Factor 1: CaffScore range
-    const scoreRange = caffScore === 0 ? 'none' : 
-                      caffScore < 25 ? 'low' : 
-                      caffScore < 80 ? 'medium' : 'high';
 
-    // Factor 2: CaffScore trend - only update if score actually changed
-    const scoreDifference = caffScore - previousCaffScore;
-    
-    // If score hasn't changed, keep the previous state
-    if (scoreDifference === 0) {
-      console.log('[HomeScreen] 🎯 Score unchanged, keeping previous state:', {
-        currentScore: caffScore,
-        previousScore: previousCaffScore,
-        currentStatus: currentCaffeineStatus
-      });
-      return currentCaffeineStatus;
-    }
-
-    const trend = scoreDifference > 0 ? 'rising' : 'declining';
-
-    console.log('[HomeScreen] 🎯 Status calculation factors:', {
-      currentScore: caffScore,
-      previousScore: previousCaffScore,
-      scoreDifference: scoreDifference.toFixed(3),
-      scoreRange,
-      trend
-    });
-
-    let finalStatus: string;
-    let triggerReason: string;
-
-    // Map range + trend to the 6 states
-    if (scoreRange === 'none') {
-      finalStatus = "No active caffeine detected";
-      triggerReason = "Score = 0";
-    } else if (scoreRange === 'low' && trend === 'declining') {
-      finalStatus = "Effects wearing off";
-      triggerReason = "Low score + declining";
-    } else if (scoreRange === 'medium' && trend === 'declining') {
-      finalStatus = "Caffeine leaving your system";
-      triggerReason = "Medium score + declining";
-    } else if (scoreRange === 'high' && trend === 'declining') {
-      finalStatus = "Caffeine leaving your system";
-      triggerReason = "High score + declining";
-    } else if (scoreRange === 'low' && trend === 'rising') {
-      finalStatus = "Caffeine being absorbed";
-      triggerReason = "Low score + rising";
-    } else if (scoreRange === 'medium' && trend === 'rising') {
-      finalStatus = "Caffeine levels rising";
-      triggerReason = "Medium score + rising";
-    } else if (scoreRange === 'high' && trend === 'rising') {
-      finalStatus = "Peak caffeine effect active";
-      triggerReason = "High score + rising";
-    } else {
-      // Fallback (shouldn't happen with simplified logic)
-      finalStatus = "Caffeine is present in your system";
-      triggerReason = `${scoreRange} score + ${trend}`;
-    }
-
-    console.log('[HomeScreen] 🎯 Status determination (range + trend):', {
-      finalStatus,
-      triggerReason,
-      scoreRange,
-      trend
-    });
-
-    return finalStatus;
-  };
-
-  // Calculate status with direct values (for immediate updates) - range + trend approach
-  const calculateCaffeineStatusDirect = (result: FocusResult, currentScore: number, prevScore: number): string => {
-    // Factor 1: CaffScore range
-    const scoreRange = currentScore === 0 ? 'none' : 
-                      currentScore < 25 ? 'low' : 
-                      currentScore < 80 ? 'medium' : 'high';
-
-    // Factor 2: CaffScore trend - only update if score actually changed
-    const scoreDifference = currentScore - prevScore;
-    
-    // If score hasn't changed, return stable status based on current range
-    if (scoreDifference === 0) {
-      console.log('[HomeScreen] 🎯 Score unchanged in DIRECT calculation:', {
-        currentScore,
-        prevScore,
-        scoreRange,
-        action: 'keeping stable status based on range'
-      });
-      
-      // Return appropriate status based on current score range
-      if (scoreRange === 'none') {
-        return "No active caffeine detected";
-      } else if (scoreRange === 'low') {
-        return "Caffeine is present in your system";
-      } else if (scoreRange === 'medium') {
-        return "Caffeine is present in your system"; 
-      } else { // high
-        return "Peak caffeine effect active";
-      }
-    }
-
-    const trend = scoreDifference > 0 ? 'rising' : 'declining';
-
-    console.log('[HomeScreen] 🎯 Status calculation factors DIRECT:', {
-      currentScore,
-      prevScore,
-      scoreDifference: scoreDifference.toFixed(3),
-      scoreRange,
-      trend
-    });
-
-    let finalStatus: string;
-    let triggerReason: string;
-
-    // Map range + trend to the 6 states
-    if (scoreRange === 'none') {
-      finalStatus = "No active caffeine detected";
-      triggerReason = "Score = 0";
-    } else if (scoreRange === 'low' && trend === 'declining') {
-      finalStatus = "Effects wearing off";
-      triggerReason = "Low score + declining";
-    } else if (scoreRange === 'medium' && trend === 'declining') {
-      finalStatus = "Caffeine leaving your system";
-      triggerReason = "Medium score + declining";
-    } else if (scoreRange === 'high' && trend === 'declining') {
-      finalStatus = "Caffeine leaving your system";
-      triggerReason = "High score + declining";
-    } else if (scoreRange === 'low' && trend === 'rising') {
-      finalStatus = "Caffeine being absorbed";
-      triggerReason = "Low score + rising";
-    } else if (scoreRange === 'medium' && trend === 'rising') {
-      finalStatus = "Caffeine levels rising";
-      triggerReason = "Medium score + rising";
-    } else if (scoreRange === 'high' && trend === 'rising') {
-      finalStatus = "Peak caffeine effect active";
-      triggerReason = "High score + rising";
-    } else {
-      // Fallback (shouldn't happen with simplified logic)
-      finalStatus = "Caffeine is present in your system";
-      triggerReason = `${scoreRange} score + ${trend}`;
-    }
-
-    console.log('[HomeScreen] 🎯 Status determination DIRECT (range + trend):', {
-      finalStatus,
-      triggerReason,
-      scoreRange,
-      trend
-    });
-
-    return finalStatus;
-  };
 
   // Update CaffScore when relevant data changes
   useEffect(() => {
@@ -448,7 +389,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         console.log('[HomeScreen] 📱 App returned to foreground, reloading data');
         setIsAppReturningFromBackground(true);
         
-        // Reload drinks data and previous score, then recalculate
+        // Reload drinks data, previous score, and caffeine status, then recalculate
         const todaysDrinksData = await StorageService.getDrinksToday(userProfile.userId);
         const last24HoursData = await StorageService.getDrinksLast24Hours(userProfile.userId);
         const prevScore = await StorageService.getPreviousCaffScore(userProfile.userId);
@@ -460,6 +401,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
         // Update totals
         const newTotal = calculateTotalCaffeine(todaysDrinksData);
         setTotalDailyCaffeine(newTotal);
+        
+        // Preserve current status when returning from background
+        // (Status will be recalculated when CaffScore updates)
         
         console.log('[HomeScreen] ✅ Data reloaded from background:', {
           todaysDrinks: todaysDrinksData.length,
@@ -502,123 +446,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }
   }, []); // Empty dependency array = runs once on mount
 
-  // Update caffeine status when relevant data changes
-  useEffect(() => {
-    const newStatus = calculateCaffeineStatus();
-    setCurrentCaffeineStatus(newStatus);
-    
-    // Mark initial load as complete after first status update
-    if (isInitialStatusLoad) {
-      setIsInitialStatusLoad(false);
-      console.log('[HomeScreen] 🚀 Initial status load completed, future changes will trigger notifications');
-    }
-  }, [caffResult, caffScore, previousCaffScore, last24HoursDrinks, userProfile, isInitialStatusLoad]);
 
-  // Handle notifications when status changes (separate from UI updates)
-  useEffect(() => {
-    // Skip notifications on initial load
-    if (isInitialStatusLoad) {
-      console.log('[HomeScreen] 🔇 Skipping notification on initial load');
-      return;
-    }
-
-    // Skip notifications when app is returning from background
-    if (isAppReturningFromBackground) {
-      console.log('[HomeScreen] 🔇 Skipping notification - app returning from background');
-      return;
-    }
-
-    // Skip if no real status change
-    if (previousCaffeineStatus === currentCaffeineStatus) {
-      console.log('[HomeScreen] ⚡ Caffeine status unchanged:', currentCaffeineStatus);
-      return;
-    }
-
-    // Skip if this is the same status we already sent a notification for
-    if (lastNotificationSent === currentCaffeineStatus) {
-      console.log('[HomeScreen] 🔇 Notification already sent for status:', currentCaffeineStatus);
-      return;
-    }
-
-    // Skip if no previous status (shouldn't happen after initial load, but safety check)
-    if (previousCaffeineStatus === "") {
-      console.log('[HomeScreen] 🔇 Skipping notification - no previous status to compare');
-      return;
-    }
-
-    console.log('[HomeScreen] 🔔 Caffeine status changed:', {
-      from: previousCaffeineStatus,
-      to: currentCaffeineStatus,
-      caffScore,
-      timestamp: new Date().toISOString()
-    });
-
-    // Clear any pending notification
-    if (pendingNotificationTimeout) {
-      clearTimeout(pendingNotificationTimeout);
-      console.log('[HomeScreen] ⏰ Cleared pending notification timeout');
-    }
-
-    // Set 5-second delay before sending notification
-    const timeoutId = setTimeout(() => {
-      console.log('[HomeScreen] ⏰ 5-second delay completed, sending notification for:', currentCaffeineStatus);
-      
-      // Trigger appropriate notification based on new status
-      let notificationTriggered = false;
-      switch (currentCaffeineStatus) {
-        case "Caffeine levels rising":
-          console.log('[HomeScreen] 📈 Triggering rising notification');
-          NotificationService.scheduleCaffeineRisingNotification();
-          notificationTriggered = true;
-          break;
-        case "Peak caffeine effect active":
-          console.log('[HomeScreen] 🚀 Triggering peak notification');
-          NotificationService.schedulePeakCaffeineNotification();
-          notificationTriggered = true;
-          break;
-        case "Effects wearing off":
-        case "Caffeine leaving your system":
-          console.log('[HomeScreen] 📉 Triggering declining notification');
-          NotificationService.scheduleCaffeineDecreasingNotification();
-          notificationTriggered = true;
-          break;
-        case "No active caffeine detected":
-          console.log('[HomeScreen] 💤 Triggering zero notification');
-          NotificationService.scheduleCaffeineZeroNotification();
-          notificationTriggered = true;
-          // Reset notification state when caffeine drops to zero for next cycle
-          setLastNotificationSent("");
-          break;
-        default:
-          console.log('[HomeScreen] ℹ️ No notification for status:', currentCaffeineStatus);
-          // No notifications for intermediate states like "being absorbed" or "leaving system"
-      }
-      
-      // Update last notification sent to prevent duplicates
-      if (notificationTriggered) {
-        setLastNotificationSent(currentCaffeineStatus);
-      }
-
-      // Clear the timeout reference
-      setPendingNotificationTimeout(null);
-    }, 5000); // 5 second delay
-
-    setPendingNotificationTimeout(timeoutId);
-    console.log('[HomeScreen] ⏰ Notification scheduled for 5 seconds from now');
-
-    // Update previous status for next comparison
-    setPreviousCaffeineStatus(currentCaffeineStatus);
-  }, [currentCaffeineStatus, previousCaffeineStatus, lastNotificationSent, caffScore, isInitialStatusLoad, pendingNotificationTimeout, isAppReturningFromBackground]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (pendingNotificationTimeout) {
-        clearTimeout(pendingNotificationTimeout);
-        console.log('[HomeScreen] 🧹 Cleared notification timeout on unmount');
-      }
-    };
-  }, [pendingNotificationTimeout]);
 
   // Get current score
   const getCurrentScore = () => {
@@ -695,15 +523,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     console.log('[HomeScreen] 💾 Saving drink to storage...');
     await StorageService.addDrinkRecord(newDrink);
     
-    // Reset notification state for new caffeine cycle
-    setLastNotificationSent("");
-    // Clear any pending notification timeouts
-    if (pendingNotificationTimeout) {
-      clearTimeout(pendingNotificationTimeout);
-      setPendingNotificationTimeout(null);
-      console.log('[HomeScreen] ⏰ Cleared pending notification timeout due to new drink');
-    }
-    console.log('[HomeScreen] 🔔 Reset notification state for new caffeine cycle');
+
     
     // Reload drinks from storage to ensure state consistency
     if (userProfile) {
@@ -1009,52 +829,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     }, 100);
   };
 
-  // Get color for caffeine status dot
-  const getStatusDotColor = (status: string): string => {
-    switch (status) {
-      case "Caffeine being absorbed":
-        return '#9C27B0'; // Purple
-      case "Caffeine levels rising":
-        return '#FFC107'; // Yellow
-      case "Peak caffeine effect active":
-        return Theme.colors.primaryGreen; // Green
-      case "Caffeine leaving your system":
-        return '#FF9800'; // Orange
-      case "Effects wearing off":
-        return Theme.colors.accentRed; // Red
-      case "No active caffeine detected":
-        return '#000000'; // Black
-      case "Caffeine is present in your system":
-        return '#666666'; // Gray for fallback
-      default:
-        return '#666666'; // Gray fallback
-    }
-  };
 
-  // Animated value for pulsing dot
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Start pulsing animation
-  useEffect(() => {
-    const startPulse = () => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 0.6,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-
-    startPulse();
-  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1128,22 +903,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               </TouchableOpacity>
             </View>
             
-            {/* Caffeine status hint */}
+            {/* Status Container */}
             <View style={styles.statusContainer}>
-              <Animated.View 
-                style={[
-                  styles.statusDot, 
-                  { 
-                    backgroundColor: getStatusDotColor(currentCaffeineStatus),
-                    transform: [{ scale: pulseAnim }]
-                  }
-                ]} 
-              />
-              <Text style={styles.hintText}>
-                {caffScore === 0 && todaysDrinks.length === 0
-                  ? "Score increases with caffeine intake for optimal focus"
-                  : currentCaffeineStatus
-                }
+              {showStatusDot && (
+                <View style={[styles.statusDot, styles.statusDotPulsing]} />
+              )}
+              <Text style={styles.statusText}>
+                {statusText}
               </Text>
             </View>
             
@@ -1478,62 +1244,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
               <Text style={styles.extremeDescription}>
                 No active caffeine effect - either no caffeine consumed or completely metabolized
               </Text>
-              
+
               {/* Status Messages Guide */}
-              <Text style={styles.sectionTitle}>📱 Status Messages</Text>
-              <Text style={styles.infoText}>
-                Below your CaffScore, you'll see real-time status messages showing what's happening with your caffeine right now:
+              <Text style={styles.sectionTitle}>📍 Status Messages</Text>
+              <Text style={styles.trendDescription}>
+                <Text style={styles.statusExample}>🔴 Rising:</Text> "Caffeine being absorbed" → "Caffeine levels rising" → "Peak caffeine effect active"{'\n\n'}
+                <Text style={styles.statusExample}>🔵 Declining:</Text> "Caffeine leaving your system" → "Effects wearing off"{'\n\n'}
+                <Text style={styles.statusExample}>⚪ Stable:</Text> Previous status preserved when score doesn't change{'\n\n'}
+                <Text style={styles.statusExample}>⚫ Zero:</Text> "No active caffeine detected"
               </Text>
-              
-              <View style={styles.statusTable}>
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: '#9C27B0' }]} />
-                    <Text style={styles.statusLabel}>"Caffeine being absorbed"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>Just drank something + levels rising</Text>
-                </View>
-                
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: '#FFC107' }]} />
-                    <Text style={styles.statusLabel}>"Caffeine levels rising"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>Strong upward trend detected</Text>
-                </View>
-                
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: Theme.colors.primaryGreen }]} />
-                    <Text style={styles.statusLabel}>"Peak caffeine effect active"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>High CaffScore (80+) + stable/rising</Text>
-                </View>
-                
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: '#FF9800' }]} />
-                    <Text style={styles.statusLabel}>"Caffeine leaving your system"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>Clear declining trend</Text>
-                </View>
-                
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: Theme.colors.accentRed }]} />
-                    <Text style={styles.statusLabel}>"Effects wearing off"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>Low levels + declining</Text>
-                </View>
-                
-                <View style={styles.statusRow}>
-                  <View style={styles.statusRowHeader}>
-                    <View style={[styles.modalStatusDot, { backgroundColor: '#000000' }]} />
-                    <Text style={styles.statusLabel}>"No active caffeine detected"</Text>
-                  </View>
-                  <Text style={styles.statusDescription}>Minimal/no active caffeine</Text>
-                </View>
-              </View>
+
              </ScrollView>
             
             <View style={styles.focusModalFooter}>
@@ -1610,6 +1330,33 @@ const styles = StyleSheet.create({
     ...Theme.fonts.caption,
     color: Theme.colors.textTertiary,
     fontSize: 10,
+    textAlign: 'center',
+  },
+  // Status styles
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Theme.spacing.xs,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Theme.colors.primaryBlue,
+    marginRight: Theme.spacing.xs,
+  },
+  statusDotPulsing: {
+    shadowColor: Theme.colors.primaryBlue,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  statusText: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    fontSize: 11,
     textAlign: 'center',
   },
   // Score navigation container
@@ -2181,51 +1928,10 @@ const styles = StyleSheet.create({
     marginTop: Theme.spacing.md,
     textAlign: 'center',
   },
-  statusTable: {
-    marginVertical: Theme.spacing.md,
-  },
-  statusRow: {
-    marginBottom: Theme.spacing.md,
-    paddingBottom: Theme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.divider,
-  },
-  statusRowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xs,
-  },
-  modalStatusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: Theme.spacing.sm,
-  },
-  statusLabel: {
-    ...Theme.fonts.sectionHeading,
+  statusExample: {
+    fontWeight: '600',
     color: Theme.colors.textPrimary,
-    fontSize: 14,
-    flex: 1,
   },
-  statusDescription: {
-    ...Theme.fonts.body,
-    color: Theme.colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginLeft: 24, // Align with text above (12px dot + 12px margin)
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Theme.spacing.xs,
-    marginBottom: Theme.spacing.sm,
-    paddingHorizontal: Theme.spacing.lg,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
+
+
 }); 
