@@ -1,23 +1,21 @@
 import Foundation
 
 struct JitterWidgetData: Codable {
-    let crashRiskScore: Int
-    let focusScore: Int
+    let caffScore: Int // This is the CaffScore from React Native
     let currentCaffeineLevel: Int
     let lastDrinkTime: String?
     let lastDrinkName: String?
+    let nextOptimalTime: String?
     let lastUpdated: String
-    let riskLevel: String
     let userId: String
     
     static let placeholder = JitterWidgetData(
-        crashRiskScore: 42,
-        focusScore: 78,
-        currentCaffeineLevel: 85,
+        caffScore: 54, // Using 54 as shown in the mascot sketch
+        currentCaffeineLevel: 120,
         lastDrinkTime: nil,
         lastDrinkName: "Coffee",
+        nextOptimalTime: nil,
         lastUpdated: Date().ISO8601String(),
-        riskLevel: "medium",
         userId: "preview"
     )
 }

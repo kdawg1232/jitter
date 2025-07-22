@@ -12,18 +12,45 @@ class WidgetDataManager {
     }
     
     func getWidgetData() -> JitterWidgetData? {
-        guard let defaults = userDefaults,
-              let data = defaults.data(forKey: "jitter_widget_data") else {
-            logger.info("No widget data found in App Groups")
+        logger.info("🔍 Attempting to read widget data from App Groups...")
+        
+        guard let defaults = userDefaults else {
+            logger.error("❌ Failed to initialize UserDefaults with suite name: \(self.suiteName)")
             return nil
+        }
+        
+        logger.info("✅ UserDefaults initialized successfully")
+        
+        // List all keys to see what's actually stored
+        let allKeys = defaults.dictionaryRepresentation().keys
+        logger.info("📋 All keys in App Groups: \(Array(allKeys))")
+        
+        guard let data = defaults.data(forKey: "jitter_widget_data") else {
+            logger.info("❌ No widget data found in App Groups for key 'jitter_widget_data'")
+            
+            // Check if there's any data at all
+            if allKeys.isEmpty {
+                logger.info("📭 App Groups UserDefaults is completely empty")
+            } else {
+                logger.info("📦 App Groups contains \(allKeys.count) keys but not 'jitter_widget_data'")
+            }
+            return nil
+        }
+        
+        logger.info("✅ Found widget data in App Groups (\(data.count) bytes)")
+        
+        // Try to convert to string to see the raw JSON
+        if let jsonString = String(data: data, encoding: .utf8) {
+            logger.info("📄 Raw JSON data: \(jsonString)")
         }
         
         do {
             let widgetData = try JSONDecoder().decode(JitterWidgetData.self, from: data)
-            logger.info("✅ Widget data loaded: Focus=\(widgetData.focusScore), Crash=\(widgetData.crashRiskScore)")
+            logger.info("✅ Widget data decoded successfully: CaffScore=\(widgetData.caffScore), Caffeine=\(widgetData.currentCaffeineLevel)mg, UserId=\(widgetData.userId)")
             return widgetData
         } catch {
             logger.error("❌ Failed to decode widget data: \(error.localizedDescription)")
+            logger.error("❌ Decoding error details: \(String(describing: error))")
             return nil
         }
     }

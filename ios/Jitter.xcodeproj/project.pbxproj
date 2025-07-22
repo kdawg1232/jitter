@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,6 +12,7 @@
 		25EFB15C2E2BF2B800349000 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 25EFB15B2E2BF2B800349000 /* SwiftUI.framework */; };
 		25EFB16D2E2BF2B900349000 /* JitterWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 25EFB1582E2BF2B800349000 /* JitterWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		25EFB1762E2BF59A00349000 /* JitterWidgetBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 25EFB1752E2BF59A00349000 /* JitterWidgetBridge.m */; };
+		25EFB4182E2F1A9600349000 /* WidgetCenterBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25EFB4172E2F1A9600349000 /* WidgetCenterBridge.swift */; };
 		315F3D3E40C17CA4EBF7F5C9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 65B334B87C2C3E49892197FA /* PrivacyInfo.xcprivacy */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
@@ -54,6 +55,7 @@
 		25EFB1732E2BF3A500349000 /* JitterWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = JitterWidgetExtension.entitlements; sourceTree = "<group>"; };
 		25EFB1742E2BF59A00349000 /* JitterWidgetBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = JitterWidgetBridge.h; sourceTree = "<group>"; };
 		25EFB1752E2BF59A00349000 /* JitterWidgetBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = JitterWidgetBridge.m; sourceTree = "<group>"; };
+		25EFB4172E2F1A9600349000 /* WidgetCenterBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetCenterBridge.swift; sourceTree = "<group>"; };
 		65B334B87C2C3E49892197FA /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Jitter/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7CB2821BE0E8271EDC4AA98E /* Pods-Jitter.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Jitter.debug.xcconfig"; path = "Target Support Files/Pods-Jitter/Pods-Jitter.debug.xcconfig"; sourceTree = "<group>"; };
 		9A3A89489AD063B1DB6FECAA /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Jitter/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
@@ -67,7 +69,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		25EFB1712E2BF2B900349000 /* Exceptions for "JitterWidget" folder in "JitterWidgetExtension" target */ = {
+		25EFB1712E2BF2B900349000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -77,18 +79,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		25EFB15D2E2BF2B800349000 /* JitterWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				25EFB1712E2BF2B900349000 /* Exceptions for "JitterWidget" folder in "JitterWidgetExtension" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = JitterWidget;
-			sourceTree = "<group>";
-		};
+		25EFB15D2E2BF2B800349000 /* JitterWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (25EFB1712E2BF2B900349000 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = JitterWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -163,6 +154,7 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
+				25EFB4172E2F1A9600349000 /* WidgetCenterBridge.swift */,
 				25EFB1742E2BF59A00349000 /* JitterWidgetBridge.h */,
 				25EFB1752E2BF59A00349000 /* JitterWidgetBridge.m */,
 				25EFB1732E2BF3A500349000 /* JitterWidgetExtension.entitlements */,
@@ -439,6 +431,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
+				25EFB4182E2F1A9600349000 /* WidgetCenterBridge.swift in Sources */,
 				25EFB1762E2BF59A00349000 /* JitterWidgetBridge.m in Sources */,
 				C67E734B13DC1F6FEDF47BA0 /* ExpoModulesProvider.swift in Sources */,
 			);
@@ -676,10 +669,7 @@
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
@@ -734,10 +724,7 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(SDKROOT)/usr/lib/swift\"$(inherited)\"";
 				MTL_ENABLE_DEBUG_INFO = NO;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				USE_HERMES = true;

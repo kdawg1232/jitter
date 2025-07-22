@@ -1,9 +1,13 @@
 import WidgetKit
 import SwiftUI
+import os.log
 
 struct JitterWidgetProvider: TimelineProvider {
+    private let logger = Logger(subsystem: "com.karthikdigavalli.jitter", category: "JitterWidgetProvider")
+    
     func placeholder(in context: Context) -> JitterWidgetEntry {
-        JitterWidgetEntry(
+        logger.info("📱 Creating placeholder entry")
+        return JitterWidgetEntry(
             date: Date(),
             data: .placeholder,
             session: nil
@@ -11,23 +15,37 @@ struct JitterWidgetProvider: TimelineProvider {
     }
     
     func getSnapshot(in context: Context, completion: @escaping (JitterWidgetEntry) -> Void) {
+        logger.info("📸 Creating snapshot entry")
         let data = WidgetDataManager.shared.getWidgetData()
         let session = WidgetDataManager.shared.getDrinkSession()
+        
+        logger.info("📸 Snapshot data: CaffScore=\(data?.caffScore ?? -1), HasSession=\(session != nil)")
+        
         let entry = JitterWidgetEntry(date: Date(), data: data, session: session)
         completion(entry)
     }
     
     func getTimeline(in context: Context, completion: @escaping (Timeline<JitterWidgetEntry>) -> Void) {
         let currentDate = Date()
+        logger.info("⏰ Creating timeline entries at \(currentDate)")
+        
         let data = WidgetDataManager.shared.getWidgetData()
         let session = WidgetDataManager.shared.getDrinkSession()
+        
+        logger.info("⏰ Timeline data: CaffScore=\(data?.caffScore ?? -1), Caffeine=\(data?.currentCaffeineLevel ?? -1)mg, HasSession=\(session != nil)")
+        
+        if let data = data {
+            logger.info("⏰ Data details: LastUpdated=\(data.lastUpdated), UserId=\(data.userId)")
+        } else {
+            logger.warning("⚠️ No widget data available - using placeholder")
+        }
         
         var entries: [JitterWidgetEntry] = []
         var reloadPolicy: TimelineReloadPolicy
         
         if let session = session, session.isActive {
             // During active timer: More efficient updates
-            print("[JitterWidgetProvider] ⏱️ Creating timer timeline - optimized updates")
+            logger.info("⏱️ Creating timer timeline - optimized updates")
             
             // Create entries for the next 30 minutes with smart intervals
             let maxDuration: TimeInterval = 30 * 60 // 30 minutes
@@ -49,7 +67,7 @@ struct JitterWidgetProvider: TimelineProvider {
             reloadPolicy = .atEnd
         } else {
             // Normal state: Less frequent updates for better battery life
-            print("[JitterWidgetProvider] 📊 Creating normal timeline - battery optimized")
+            logger.info("📊 Creating normal timeline - battery optimized")
             
             // Update every 15 minutes for next 2 hours
             for i in 0..<8 {
@@ -60,6 +78,8 @@ struct JitterWidgetProvider: TimelineProvider {
             
             reloadPolicy = .after(Calendar.current.date(byAdding: .hour, value: 2, to: currentDate)!)
         }
+        
+        logger.info("⏰ Created \(entries.count) timeline entries with policy: \(String(describing: reloadPolicy))")
         
         let timeline = Timeline(entries: entries, policy: reloadPolicy)
         completion(timeline)

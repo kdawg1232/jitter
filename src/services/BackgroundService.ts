@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 
-import { StorageService, CaffScoreService, NotificationService, calculateStatus } from './index';
+import { StorageService, CaffScoreService, NotificationService, WidgetService, calculateStatus } from './index';
 
 export class BackgroundService {
   private static intervalId: NodeJS.Timeout | null = null;
@@ -172,6 +172,9 @@ export class BackgroundService {
       } else {
         console.log('[BackgroundService] ✅ Status unchanged');
       }
+
+      // Update widget data
+      await WidgetService.updateWidgetData(userProfile.userId);
 
     } catch (error) {
       console.error('[BackgroundService] ❌ Calculation failed:', error);
