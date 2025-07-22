@@ -10,6 +10,7 @@ import {
   Alert,
   Linking,
   Platform,
+  Image,
 } from 'react-native';
 import { Theme } from '../theme/colors';
 import { StorageService, WidgetService, NotificationService } from '../services';
@@ -253,14 +254,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const SettingRow: React.FC<{
-    icon: string;
+    icon?: string;
+    iconSource?: any;
     title: string;
     onPress: () => void;
     showArrow?: boolean;
-  }> = ({ icon, title, onPress, showArrow = true }) => (
+  }> = ({ icon, iconSource, title, onPress, showArrow = true }) => (
     <TouchableOpacity style={styles.settingRow} onPress={onPress}>
       <View style={styles.settingRowLeft}>
-        <Text style={styles.settingIcon}>{icon}</Text>
+        {iconSource ? (
+          <Image source={iconSource} style={styles.settingIconImage} />
+        ) : (
+          <Text style={styles.settingIcon}>{icon}</Text>
+        )}
         <Text style={styles.settingTitle}>{title}</Text>
       </View>
       {showArrow && <Text style={styles.chevron}>›</Text>}
@@ -288,7 +294,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.card}>
             <TouchableOpacity style={styles.editInputRow} onPress={handleEditProfile}>
               <View style={styles.editInputLeft}>
-                <Text style={styles.editInputIcon}>👤</Text>
+                <Image source={require('../../assets/profileicon.png')} style={styles.editInputIconImage} />
                 <View>
                   <Text style={styles.editInputTitle}>personal information</Text>
                   <Text style={styles.editInputSubtitle}>
@@ -329,7 +335,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     styles.widgetIndicator, 
                     widgetsEnabled && styles.widgetIndicatorEnabled
                   ]} />
-                  <Text style={styles.widgetIcon}>📱</Text>
+                  <Image source={require('../../assets/phoneicon.png')} style={styles.widgetIconImage} />
                   <View>
                     <Text style={styles.widgetTitle}>
                       {widgetsEnabled ? 'widgets are set up!' : 'set up widget'}
@@ -385,7 +391,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     styles.notificationIndicator, 
                     notificationsEnabled && styles.notificationIndicatorEnabled
                   ]} />
-                  <Text style={styles.notificationIcon}>📱</Text>
+                  <Image source={require('../../assets/phoneicon.png')} style={styles.notificationIconImage} />
                   <View>
                     <Text style={styles.notificationTitle}>
                       {notificationsEnabled ? 'notifications are set up!' : 'set up notifications'}
@@ -418,25 +424,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <Text style={styles.sectionHeader}>support & feedback</Text>
           <View style={styles.card}>
             <SettingRow
-              icon="❓"
+              iconSource={require('../../assets/questionicon.png')}
               title="help & support"
               onPress={handleHelpSupport}
             />
             <View style={styles.divider} />
             <SettingRow
-              icon="💡"
+              iconSource={require('../../assets/lightbulbicon.png')}
               title="feature requests"
               onPress={handleFeatureRequests}
             />
             <View style={styles.divider} />
             <SettingRow
-              icon="⭐"
+              iconSource={require('../../assets/reviewicon.png')}
               title="leave a review"
               onPress={handleLeaveReview}
             />
             <View style={styles.divider} />
             <SettingRow
-              icon="✉️"
+              iconSource={require('../../assets/mailicon.png')}
               title="contact us"
               onPress={handleContactUs}
             />
@@ -448,13 +454,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <Text style={styles.sectionHeader}>legal</Text>
           <View style={styles.card}>
             <SettingRow
-              icon="🛡️"
+              iconSource={require('../../assets/privacypolicyicon.png')}
               title="privacy policy"
               onPress={handlePrivacyPolicy}
             />
             <View style={styles.divider} />
             <SettingRow
-              icon="📄"
+              iconSource={require('../../assets/termsofserviceicon.png')}
               title="terms of service"
               onPress={handleTermsOfService}
             />
@@ -475,13 +481,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               style={styles.socialButton}
               onPress={() => Linking.openURL('https://instagram.com/jitterapp')}
             >
-              <Text style={styles.socialIcon}>📷</Text>
+              <Image source={require('../../assets/instagramicon.png')} style={styles.socialIconImage} />
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.socialButton}
               onPress={() => Linking.openURL('https://tiktok.com/@jitterapp')}
             >
-              <Text style={styles.socialIcon}>🎵</Text>
+              <Image source={require('../../assets/png-transparent-tiktok-icon-thumbnail.png')} style={styles.socialIconImage} />
             </TouchableOpacity>
           </View>
         </View>
@@ -547,6 +553,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginRight: Theme.spacing.md,
   },
+  editInputIconImage: {
+    width: 24,
+    height: 24,
+    marginRight: Theme.spacing.md,
+  },
   editInputTitle: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
@@ -586,6 +597,11 @@ const styles = StyleSheet.create({
   },
   widgetIcon: {
     fontSize: 24,
+    marginRight: Theme.spacing.md,
+  },
+  widgetIconImage: {
+    width: 24,
+    height: 24,
     marginRight: Theme.spacing.md,
   },
   widgetTitle: {
@@ -641,6 +657,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginRight: Theme.spacing.md,
   },
+  notificationIconImage: {
+    width: 24,
+    height: 24,
+    marginRight: Theme.spacing.md,
+  },
   notificationTitle: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
@@ -692,6 +713,12 @@ const styles = StyleSheet.create({
     width: 24,
     textAlign: 'center',
   },
+  settingIconImage: {
+    width: 20,
+    height: 20,
+    marginRight: Theme.spacing.md,
+    marginLeft: 2, // Center align with text icons
+  },
   settingTitle: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
@@ -725,6 +752,10 @@ const styles = StyleSheet.create({
   },
   socialIcon: {
     fontSize: 24,
+  },
+  socialIconImage: {
+    width: 24,
+    height: 24,
   },
   bottomSpacing: {
     height: Theme.spacing.xxl,

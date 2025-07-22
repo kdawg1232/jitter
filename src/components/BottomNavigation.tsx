@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Image,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Theme } from '../theme/colors';
@@ -22,12 +23,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   activeTab,
   onTabPress,
 }) => {
-  const tabs: { key: TabType; label: string; icon: string }[] = [
-    { key: 'home', label: 'home', icon: '🏠' },
-    { key: 'stats', label: 'stats', icon: '📊' },
+  const tabs: { key: TabType; label: string; icon?: string; iconSource?: any }[] = [
+    { key: 'home', label: 'home', iconSource: require('../../assets/houseicon.png') },
+    { key: 'stats', label: 'stats', iconSource: require('../../assets/statsicon.png') },
     { key: 'planning', label: 'planning', icon: '📅' },
-    { key: 'winnings', label: 'winnings', icon: '🏆' },
-    { key: 'settings', label: 'settings', icon: '⚙️' },
+    { key: 'winnings', label: 'winnings', iconSource: require('../../assets/winningsicon.png') },
+    { key: 'settings', label: 'settings', iconSource: require('../../assets/settingsicon.png') },
   ];
 
   const handleTabPress = (tab: TabType) => {
@@ -50,7 +51,11 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
             ]}
             onPress={() => handleTabPress(tab.key)}
           >
-            <Text style={styles.tabIcon}>{tab.icon}</Text>
+            {tab.iconSource ? (
+              <Image source={tab.iconSource} style={styles.tabIconImage} />
+            ) : (
+              <Text style={styles.tabIcon}>{tab.icon}</Text>
+            )}
             <Text
               style={[
                 styles.tabLabel,
@@ -87,6 +92,11 @@ const styles = StyleSheet.create({
   },
   tabIcon: {
     fontSize: 20,
+    marginBottom: 2,
+  },
+  tabIconImage: {
+    width: 20,
+    height: 20,
     marginBottom: 2,
   },
   tabLabel: {

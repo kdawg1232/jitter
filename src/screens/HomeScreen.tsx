@@ -1235,7 +1235,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                   ]} 
                   onPress={handleSleepPress}
                 >
-                  <Text style={styles.trackingEmoji}>🌙</Text>
+                  <Image source={require('../../assets/sleepicon.png')} style={styles.trackingIcon} />
                   {needsSleepUpdate && <Text style={styles.alertIcon}>!</Text>}
                 </TouchableOpacity>
                 <Text style={[
@@ -1254,7 +1254,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                   ]} 
                   onPress={handleStressPress}
                 >
-                  <Text style={styles.trackingEmoji}>😰</Text>
+                  <Image source={require('../../assets/stressicon.png')} style={styles.trackingIcon} />
                   {needsStressUpdate && <Text style={styles.alertIcon}>!</Text>}
                 </TouchableOpacity>
                 <Text style={[
@@ -1288,7 +1288,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                   ]} 
                   onPress={handleFoodPress}
                 >
-                  <Text style={styles.trackingEmoji}>🍽️</Text>
+                  <Image source={require('../../assets/mealicon.png')} style={styles.trackingIcon} />
                   {needsFoodUpdate && <Text style={styles.alertIcon}>!</Text>}
                 </TouchableOpacity>
                 <Text style={[
@@ -1307,7 +1307,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                   ]} 
                   onPress={handleExercisePress}
                 >
-                  <Text style={styles.trackingEmoji}>🏃‍♂️</Text>
+                  <Image source={require('../../assets/bikeicon.png')} style={styles.trackingIcon} />
                   {needsExerciseUpdate && <Text style={styles.alertIcon}>!</Text>}
                 </TouchableOpacity>
                 <Text style={[
@@ -2577,6 +2577,10 @@ const styles = StyleSheet.create({
   },
   trackingEmoji: {
     fontSize: 24, // Slightly smaller emoji
+  },
+  trackingIcon: {
+    width: 24,
+    height: 24,
   },
   trackingText: {
     ...Theme.fonts.caption,
