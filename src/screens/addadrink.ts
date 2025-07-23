@@ -31,6 +31,9 @@ export interface AddDrinkWorkflowState {
   customDrinkData: {
     drinkName: string;
     caffeineAmount: string;
+    sipDuration: string;
+    sipDurationDigits: string;
+    hoursAgo: number | null;
     completionPercentage: number;
   };
 }
@@ -93,7 +96,7 @@ export const createDrinkRecordFromSearchData = (
   userId: string
 ): DrinkRecord => {
   const actualCaffeine = calculateCaffeineFromSearchDrink(data);
-  const consumptionTime = data.hoursAgo !== null ? calculateConsumptionTime(data.hoursAgo) : new Date();
+  const timestamp = data.hoursAgo !== null ? calculateConsumptionTime(data.hoursAgo) : new Date();
   
   return {
     id: Date.now().toString(),
@@ -103,19 +106,25 @@ export const createDrinkRecordFromSearchData = (
     completionPercentage: data.completionPercentage,
     timeToConsume: data.sipDuration,
     actualCaffeineConsumed: actualCaffeine,
-    timestamp: consumptionTime,
+    timestamp,
     recordedAt: new Date(),
   };
 };
 
 // Create drink record from custom drink data
 export const createDrinkRecordFromCustomData = (
-  customData: { drinkName: string; caffeineAmount: string; completionPercentage: number },
+  customData: {
+    drinkName: string;
+    caffeineAmount: string;
+    completionPercentage: number;
+    sipDuration: string;
+    hoursAgo: number | null;
+  },
   userId: string
 ): DrinkRecord => {
   const caffeineAmountNum = parseFloat(customData.caffeineAmount) || 0;
   const actualCaffeine = Math.round((caffeineAmountNum * customData.completionPercentage) / 100);
-  const now = new Date();
+  const timestamp = customData.hoursAgo !== null ? calculateConsumptionTime(customData.hoursAgo) : new Date();
   
   return {
     id: Date.now().toString(),
@@ -123,10 +132,10 @@ export const createDrinkRecordFromCustomData = (
     name: customData.drinkName || 'Custom Drink',
     caffeineAmount: caffeineAmountNum,
     completionPercentage: customData.completionPercentage,
-    timeToConsume: '00:00:00', // No time since no timer
+    timeToConsume: customData.sipDuration,
     actualCaffeineConsumed: actualCaffeine,
-    timestamp: now,
-    recordedAt: now,
+    timestamp,
+    recordedAt: new Date(),
   };
 };
 
@@ -193,6 +202,9 @@ export const getInitialAddDrinkState = (): AddDrinkWorkflowState => ({
   customDrinkData: {
     drinkName: '',
     caffeineAmount: '',
+    sipDuration: '00:05:00',
+    sipDurationDigits: '',
+    hoursAgo: null,
     completionPercentage: 50,
   }
 });

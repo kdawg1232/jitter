@@ -2,6 +2,7 @@ import { StorageService } from './StorageService';
 
 import { CaffScoreService } from './CaffScoreService';
 import { UserProfile, DrinkRecord } from '../types';
+import { OnboardingData } from '../types/onboarding';
 import JitterWidgetBridge from '../native/JitterWidgetBridge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -21,20 +22,45 @@ export class WidgetService {
   
   /**
    * Set up widgets (similar to NotificationService.setupNotifications)
+   * @param onboardingData Optional onboarding data to use if user profile doesn't exist yet
    */
-  static async setupWidgets(): Promise<boolean> {
+  static async setupWidgets(onboardingData?: OnboardingData): Promise<boolean> {
     try {
       console.log('[WidgetService] 🚀 Setting up widgets...');
 
-      // Check if user profile exists
-      const userProfile = await StorageService.getUserProfile();
-      if (!userProfile) {
-        console.log('[WidgetService] ❌ No user profile found');
+      // Check if user profile exists, or use onboarding data
+      let userProfile = await StorageService.getUserProfile();
+      let userId: string;
+      
+      if (!userProfile && onboardingData) {
+        // During onboarding, create a temporary user profile from onboarding data
+        console.log('[WidgetService] 📝 Using onboarding data for widget setup');
+        userId = 'user_' + new Date().getTime();
+        userProfile = {
+          userId,
+          name: onboardingData.name || 'User',
+          age: onboardingData.age || 25,
+          weight: onboardingData.weight || 70,
+          height: onboardingData.height || 170,
+          gender: onboardingData.gender || 'other',
+          activityLevel: onboardingData.activityLevel || 'moderate',
+          caffeineToleranceLevelSelected: onboardingData.caffeineToleranceLevelSelected || 'medium',
+          maxCaffeinePerDay: onboardingData.maxCaffeinePerDay || 400,
+          trackSleepDaily: onboardingData.trackSleepDaily || false,
+          lastNightSleep: onboardingData.lastNightSleep || 8,
+          lastDrinkTime: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      } else if (!userProfile) {
+        console.log('[WidgetService] ❌ No user profile found and no onboarding data provided');
         return false;
+      } else {
+        userId = userProfile.userId;
       }
 
       // Update widget data to ensure it's current
-      await this.updateWidgetData(userProfile.userId);
+      await this.updateWidgetData(userId, userProfile);
       
       // Check if widget data is available
       const widgetData = await this.getWidgetData();
@@ -140,13 +166,18 @@ export class WidgetService {
   /**
    * Updates widget data with current app state
    * This should be called whenever key data changes (new drink, sleep update, etc.)
+   * @param userId User ID
+   * @param userProfile Optional user profile to use instead of fetching from storage
    */
-  static async updateWidgetData(userId: string): Promise<void> {
+  static async updateWidgetData(userId: string, userProfile?: UserProfile): Promise<void> {
     try {
       console.log('[WidgetService] 🔄 Updating widget data for user:', userId);
       
-      // Get user profile and recent drinks
-      const userProfile = await StorageService.getUserProfile();
+      // Get user profile if not provided
+      if (!userProfile) {
+        userProfile = await StorageService.getUserProfile();
+      }
+      
       const last24HoursDrinks = await StorageService.getDrinksLast24Hours(userId);
       const lastNightSleep = await StorageService.getLastNightSleep(userId);
       
@@ -178,6 +209,13 @@ export class WidgetService {
         last24HoursDrinks
       );
       
+      // Ensure caffScore is never null/undefined to prevent JSON serialization crash
+      let caffScore = focusResult?.score ?? 0;
+      if (caffScore === null || caffScore === undefined || isNaN(caffScore)) {
+        console.warn('[WidgetService] ⚠️ CaffScore calculation returned null/NaN, using fallback value 0');
+        caffScore = 0;
+      }
+      
       // Get last drink info
       const sortedDrinks = last24HoursDrinks.sort(
         (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
@@ -200,7 +238,7 @@ export class WidgetService {
       }
       
       const widgetData: WidgetData = {
-        caffScore: Math.round(focusResult.score),
+        caffScore: Math.round(caffScore), // Use the safe caffScore value
         currentCaffeineLevel: Math.round(currentCaffeineLevel),
         lastDrinkTime: lastDrink ? lastDrink.timestamp.toISOString() : null,
         lastDrinkName: lastDrink ? lastDrink.name : null,

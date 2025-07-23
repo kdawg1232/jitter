@@ -133,9 +133,8 @@ export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCle
       case 'stats':
         return <StatsScreen refreshTrigger={statsRefreshTrigger} />;
       case 'planning': {
-        // Import PlanScreen dynamically to avoid circular dependency
-        const { PlanScreen } = require('../screens/PlanScreen') as { PlanScreen: React.ComponentType };
-        return React.createElement(PlanScreen, {});
+        // Planning screen disabled for v1, will be enabled in v2
+        return <HomeScreen onProfileCleared={onProfileCleared} />;
       }
       case 'winnings':
         return <WinningsScreen />;

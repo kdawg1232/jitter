@@ -2617,6 +2617,55 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                 </View>
               </View>
 
+              {/* Sip Duration */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how long did you sip for?</Text>
+                <TextInput
+                  style={styles.sipDurationInput}
+                  value={formatTimeFromDigits(addDrinkState.customDrinkData.sipDurationDigits)}
+                  onChangeText={(text) => {
+                    const digits = text.replace(/\D/g, '');
+                    const formattedTime = formatTimeFromDigits(digits);
+                    setAddDrinkState(prev => ({
+                      ...prev,
+                      customDrinkData: {
+                        ...prev.customDrinkData,
+                        sipDurationDigits: digits,
+                        sipDuration: formattedTime
+                      }
+                    }));
+                  }}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              {/* Time Ago */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how long ago did you finish?</Text>
+                <View style={styles.timeAgoButtonsContainer}>
+                  {TIME_AGO_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.hours}
+                      style={[
+                        styles.timeAgoButton,
+                        addDrinkState.customDrinkData.hoursAgo === option.hours && styles.timeAgoButtonSelected
+                      ]}
+                      onPress={() => setAddDrinkState(prev => ({
+                        ...prev,
+                        customDrinkData: { ...prev.customDrinkData, hoursAgo: option.hours }
+                      }))}
+                    >
+                      <Text style={[
+                        styles.timeAgoButtonText,
+                        addDrinkState.customDrinkData.hoursAgo === option.hours && styles.timeAgoButtonTextSelected
+                      ]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
               {/* Completion Percentage */}
               <View style={styles.questionSectionNew}>
                 <Text style={styles.questionTextNew}>how much of the drink did you complete?</Text>
@@ -2684,7 +2733,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
             <ScrollView style={styles.questionsScrollContainer} showsVerticalScrollIndicator={false}>
               {/* How many oz did you drink? */}
               <View style={styles.questionSectionNew}>
-                <Text style={styles.questionTextNew}>how many oz did you drink?</Text>
+                <Text style={styles.questionTextNew}>how many oz is your drink?</Text>
                 <TextInput
                   style={styles.ouncesInput}
                   placeholder="fl oz"

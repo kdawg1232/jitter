@@ -106,7 +106,8 @@ export const SetupWidgetNotificationsScreen: React.FC<SetupWidgetNotificationsSc
     try {
       console.log('[SetupWidgetNotificationsScreen] 📱 Starting widget setup...');
       
-      const setupSuccessful = await WidgetService.setupWidgets();
+      // Pass onboarding data to widget setup since user profile isn't saved yet
+      const setupSuccessful = await WidgetService.setupWidgets(data);
       
       if (setupSuccessful) {
         setWidgetsEnabled(true);

@@ -48,7 +48,7 @@ export interface OnboardingStepProps {
 
 export const initialOnboardingData: OnboardingData = {
   weightKg: null,
-  weightUnit: 'kg',
+  weightUnit: 'lbs', // Change default to lbs instead of kg
   age: null,
   sex: null,
   smoker: null,
@@ -97,10 +97,18 @@ export const validateStep = {
   },
   
   4: (data: OnboardingData): boolean => {
-    return data.typicalDailyCaffeine !== null && 
-           data.typicalDailyCaffeine >= 0 && 
-           data.typicalDailyCaffeine <= 1000 &&
-           data.caffeineSource !== null;
+    // Fix: Allow None (0) option without requiring caffeine source
+    const hasValidCaffeineAmount = data.typicalDailyCaffeine !== null && 
+                                  data.typicalDailyCaffeine >= 0 && 
+                                  data.typicalDailyCaffeine <= 1000;
+    
+    // If no caffeine (0), don't require a source
+    if (data.typicalDailyCaffeine === 0) {
+      return hasValidCaffeineAmount;
+    }
+    
+    // If they consume caffeine (> 0), require a source
+    return hasValidCaffeineAmount && data.caffeineSource !== null;
   },
   
   5: (data: OnboardingData): boolean => {

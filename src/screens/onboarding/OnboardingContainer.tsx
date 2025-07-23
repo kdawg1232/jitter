@@ -128,7 +128,7 @@ export const OnboardingContainer: React.FC<OnboardingContainerProps> = ({
       if (onboardingData.widgetsEnabled) {
         try {
           console.log('📱 Setting up widgets from onboarding...');
-          const widgetSetupSuccessful = await WidgetService.setupWidgets();
+          const widgetSetupSuccessful = await WidgetService.setupWidgets(onboardingData);
           if (widgetSetupSuccessful) {
             console.log('✅ Widgets set up successfully from onboarding');
           } else {
