@@ -34,10 +34,22 @@ struct JitterWidgetProvider: TimelineProvider {
         
         logger.info("⏰ Timeline data: CaffScore=\(data?.caffScore ?? -1), Caffeine=\(data?.currentCaffeineLevel ?? -1)mg, HasSession=\(session != nil)")
         
+        // ENHANCED DEBUG LOGGING
+        logger.info("🔍 DEVICE DEBUG - Widget Configuration Details:")
+        logger.info("🔍 Context.family: \(context.family.debugDescription)")
+        logger.info("🔍 Context.isPreview: \(context.isPreview)")
+        logger.info("🔍 Data available: \(data != nil)")
+        
         if let data = data {
             logger.info("⏰ Data details: LastUpdated=\(data.lastUpdated), UserId=\(data.userId)")
+            logger.info("🔍 DEVICE DEBUG - Full data: caffScore=\(data.caffScore), caffeine=\(data.currentCaffeineLevel)mg, lastDrink=\(data.lastDrinkName ?? "none")")
         } else {
             logger.warning("⚠️ No widget data available - using placeholder")
+            logger.warning("🔍 DEVICE DEBUG - This is likely why widget looks different!")
+        }
+        
+        if let session = session {
+            logger.info("🔍 DEVICE DEBUG - Session: id=\(session.id), active=\(session.isActive), elapsed=\(session.elapsedSeconds)s")
         }
         
         var entries: [JitterWidgetEntry] = []

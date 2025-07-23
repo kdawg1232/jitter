@@ -19,6 +19,22 @@ import Slider from '@react-native-community/slider';
 import { Theme } from '../theme/colors';
 import { UserProfile, DrinkRecord, FocusResult } from '../types';
 import { StorageService, CaffScoreService, ValidationService, WidgetService, DeepLinkService, PlanningService, NotificationService, calculateStatus } from '../services';
+import { 
+  AddDrinkWorkflowState, 
+  DrinkFromDatabase, 
+  SearchDrinkData, 
+  getInitialAddDrinkState, 
+  parseCSVToDrinkDatabase, 
+  filterDrinks, 
+  calculateCaffeineFromSearchDrink, 
+  createDrinkRecordFromSearchData,
+  createDrinkRecordFromCustomData,
+  formatTimeFromDigits,
+  toggleDrinkFavorite,
+  getFavoritedDrinks,
+  TIME_AGO_OPTIONS 
+} from './addadrink';
+import { getDrinksDatabase } from '../data/drinksDatabase';
 
 const { width } = Dimensions.get('window');
 
@@ -102,6 +118,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   
   // Delete confirmation state
   const [deletingDrinkId, setDeletingDrinkId] = useState<string | null>(null);
+  
+  // NEW: Add drink workflow state
+  const [addDrinkState, setAddDrinkState] = useState<AddDrinkWorkflowState>(getInitialAddDrinkState());
+  const [drinkDatabase, setDrinkDatabase] = useState<DrinkFromDatabase[]>([]);
   
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
@@ -210,6 +230,45 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
     await AsyncStorage.setItem('last_active_date', today);
   };
 
+  // Load drink database
+  const loadDrinkDatabase = async () => {
+    try {
+      const drinks = getDrinksDatabase();
+      
+      // Load favorited drinks from storage
+      const savedFavorites = await AsyncStorage.getItem('favorited_drinks');
+      const favoritedNames = savedFavorites ? JSON.parse(savedFavorites) : [];
+      
+      // Mark drinks as favorited based on saved data
+      const drinksWithFavorites = drinks.map(drink => ({
+        ...drink,
+        isFavorited: favoritedNames.includes(drink.name)
+      }));
+      
+      setDrinkDatabase(drinksWithFavorites);
+      
+      // Update the add drink state with favorited drinks
+      const favorited = getFavoritedDrinks(drinksWithFavorites);
+      setAddDrinkState(prev => ({ ...prev, favoritedDrinks: favorited }));
+      
+      console.log('[HomeScreen] ☕ Loaded', drinks.length, 'drinks from database,', favorited.length, 'favorited');
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error loading drink database:', error);
+      // Set empty array as fallback
+      setDrinkDatabase([]);
+    }
+  };
+
+  // Save favorited drinks to storage
+  const saveFavoritedDrinks = async (drinks: DrinkFromDatabase[]) => {
+    try {
+      const favoritedNames = drinks.filter(d => d.isFavorited).map(d => d.name);
+      await AsyncStorage.setItem('favorited_drinks', JSON.stringify(favoritedNames));
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error saving favorited drinks:', error);
+    }
+  };
+
   // Load drinks on component mount
   useEffect(() => {
     const initializeData = async () => {
@@ -220,6 +279,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
       const total = calculateTotalCaffeine(todaysDrinksData);
       setTotalDailyCaffeine(total);
       await checkDailyTrackingStatus();
+      
+      // Load drink database
+      await loadDrinkDatabase();
       
       // Check for widget pre-fill data
       await checkWidgetPreFill();
@@ -468,10 +530,252 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   };
 
   const handleAddDrink = () => {
-    setTimerStarted(true);
-    setIsTimerRunning(true);
-    setElapsedTime(0);
-    setDrinkName('');
+    setAddDrinkState(prev => ({ ...prev, showThreeButtons: true }));
+  };
+
+  // NEW: Handle the three button selection
+  const handleQuickAdd = () => {
+    if (addDrinkState.favoritedDrinks.length === 0) {
+      // If no favorited drinks, show alert and go back to search
+      alert('No favorited drinks yet! Please search for drinks and star your favorites.');
+      setAddDrinkState(prev => ({ ...prev, showThreeButtons: false }));
+      return;
+    }
+    
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showThreeButtons: false,
+      showQuickAddModal: true 
+    }));
+  };
+
+  const handleSearchFromDrink = () => {
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showThreeButtons: false,
+      showSearchModal: true,
+      filteredDrinks: drinkDatabase 
+    }));
+  };
+
+  const handleAddCustomDrink = () => {
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showThreeButtons: false,
+      showCustomDrinkModal: true 
+    }));
+  };
+
+  // NEW: Handle search modal functions
+  const handleSearchQueryChange = (query: string) => {
+    const filtered = filterDrinks(drinkDatabase, query);
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      searchQuery: query,
+      filteredDrinks: filtered 
+    }));
+  };
+
+  const handleSelectDrink = (drink: DrinkFromDatabase) => {
+    setAddDrinkState(prev => ({ 
+      ...prev,
+      searchDrinkData: {
+        ...prev.searchDrinkData,
+        selectedDrink: drink
+      }
+    }));
+  };
+
+  // NEW: Handle toggling drink favorite status
+  const handleToggleFavorite = async (drink: DrinkFromDatabase) => {
+    const updatedDatabase = toggleDrinkFavorite(drinkDatabase, drink);
+    const updatedFiltered = toggleDrinkFavorite(addDrinkState.filteredDrinks, drink);
+    const favorited = getFavoritedDrinks(updatedDatabase);
+    
+    setDrinkDatabase(updatedDatabase);
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      filteredDrinks: updatedFiltered,
+      favoritedDrinks: favorited 
+    }));
+    
+    // Save to storage
+    await saveFavoritedDrinks(updatedDatabase);
+  };
+
+  const handleSearchModalCancel = () => {
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showSearchModal: false,
+      searchQuery: '',
+      filteredDrinks: drinkDatabase,
+      searchDrinkData: {
+        ...prev.searchDrinkData,
+        selectedDrink: null,
+        sipDuration: '00:05:00',
+        sipDurationDigits: ''
+      }
+    }));
+  };
+
+  const handleSearchModalConfirm = () => {
+    if (!addDrinkState.searchDrinkData.selectedDrink) return;
+    
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showSearchModal: false,
+      showQuestionsModal: true 
+    }));
+  };
+
+  // NEW: Handle quick add modal functions
+  const handleQuickAddModalCancel = () => {
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showQuickAddModal: false,
+      searchDrinkData: {
+        ...prev.searchDrinkData,
+        selectedDrink: null,
+        sipDuration: '00:05:00',
+        sipDurationDigits: ''
+      }
+    }));
+  };
+
+  const handleQuickAddModalConfirm = () => {
+    if (!addDrinkState.searchDrinkData.selectedDrink) return;
+    
+    setAddDrinkState(prev => ({ 
+      ...prev, 
+      showQuickAddModal: false,
+      showQuestionsModal: true 
+    }));
+  };
+
+  // NEW: Handle custom drink modal functions
+  const handleCustomDrinkModalCancel = () => {
+    setAddDrinkState(getInitialAddDrinkState());
+  };
+
+  const handleRecordCustomDrink = async () => {
+    if (!userProfile) return;
+
+    try {
+      const drinkRecord = createDrinkRecordFromCustomData(
+        addDrinkState.customDrinkData,
+        userProfile.userId
+      );
+
+      console.log('[HomeScreen] ☕ Recording custom drink:', drinkRecord);
+
+      // Save to storage
+      await StorageService.addDrinkRecord(drinkRecord);
+
+      // Update state
+      if (userProfile) {
+        const updatedTodaysDrinks = await StorageService.getDrinksToday(userProfile.userId);
+        const updatedLast24HoursDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+        setTodaysDrinks(updatedTodaysDrinks);
+        setLast24HoursDrinks(updatedLast24HoursDrinks);
+        
+        const newTotal = calculateTotalCaffeine(updatedTodaysDrinks);
+        setTotalDailyCaffeine(newTotal);
+      }
+
+      // Update CaffScore and other services
+      await calculateCaffScore();
+      
+      if (userProfile) {
+        await WidgetService.updateWidgetData(userProfile.userId);
+        await PlanningService.reactToDrinkLogged(userProfile.userId, drinkRecord);
+        await updateStatsCalculations(userProfile.userId);
+      }
+
+      // Reset state
+      setAddDrinkState(getInitialAddDrinkState());
+
+      console.log('[HomeScreen] ✅ Custom drink recorded successfully');
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error recording custom drink:', error);
+    }
+  };
+
+  // NEW: Handle questions modal functions
+  const handleQuestionsModalCancel = () => {
+    setAddDrinkState(getInitialAddDrinkState());
+  };
+
+  // NEW: Handle time input changes (right-to-left like original)
+  const handleSipDurationChange = (text: string) => {
+    const newDigits = text.replace(/\D/g, '');
+    
+    if (newDigits.length > addDrinkState.searchDrinkData.sipDurationDigits.length) {
+      const addedDigit = newDigits.slice(-1);
+      const updatedDigits = (addDrinkState.searchDrinkData.sipDurationDigits + addedDigit).slice(-6);
+      const formattedTime = formatTimeFromDigits(updatedDigits);
+      
+      setAddDrinkState(prev => ({
+        ...prev,
+        searchDrinkData: {
+          ...prev.searchDrinkData,
+          sipDurationDigits: updatedDigits,
+          sipDuration: formattedTime
+        }
+      }));
+    } else {
+      const formattedTime = formatTimeFromDigits(newDigits);
+      setAddDrinkState(prev => ({
+        ...prev,
+        searchDrinkData: {
+          ...prev.searchDrinkData,
+          sipDurationDigits: newDigits,
+          sipDuration: formattedTime
+        }
+      }));
+    }
+  };
+
+  const handleRecordSearchDrink = async () => {
+    if (!userProfile || !addDrinkState.searchDrinkData.selectedDrink) return;
+
+    try {
+      const drinkRecord = createDrinkRecordFromSearchData(
+        addDrinkState.searchDrinkData,
+        userProfile.userId
+      );
+
+      console.log('[HomeScreen] ☕ Recording search-based drink:', drinkRecord);
+
+      // Save to storage
+      await StorageService.addDrinkRecord(drinkRecord);
+
+      // Update state
+      if (userProfile) {
+        const updatedTodaysDrinks = await StorageService.getDrinksToday(userProfile.userId);
+        const updatedLast24HoursDrinks = await StorageService.getDrinksLast24Hours(userProfile.userId);
+        setTodaysDrinks(updatedTodaysDrinks);
+        setLast24HoursDrinks(updatedLast24HoursDrinks);
+        
+        const newTotal = calculateTotalCaffeine(updatedTodaysDrinks);
+        setTotalDailyCaffeine(newTotal);
+      }
+
+      // Update CaffScore and other services
+      await calculateCaffScore();
+      
+      if (userProfile) {
+        await WidgetService.updateWidgetData(userProfile.userId);
+        await PlanningService.reactToDrinkLogged(userProfile.userId, drinkRecord);
+        await updateStatsCalculations(userProfile.userId);
+      }
+
+      // Reset state
+      setAddDrinkState(getInitialAddDrinkState());
+
+      console.log('[HomeScreen] ✅ Search-based drink recorded successfully');
+    } catch (error) {
+      console.error('[HomeScreen] ❌ Error recording search-based drink:', error);
+    }
   };
 
   const handleStopTimer = () => {
@@ -1085,12 +1389,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
   };
 
   // Calculate percentage text position for slider (improved positioning)
-  const getPercentageTextPosition = () => {
-    const sliderWidth = width - (Theme.spacing.lg * 2);
-    const thumbPosition = (completionPercentage / 100) * sliderWidth;
+  const getPercentageTextPosition = (percentage?: number) => {
+    const sliderWidth = width - (Theme.spacing.lg * 2) - (Theme.spacing.md * 2); // Account for padding
+    const percentageValue = percentage !== undefined ? percentage : completionPercentage;
+    const thumbPosition = (percentageValue / 100) * sliderWidth;
     const textWidth = 50; // Approximate width of percentage text
     const leftPosition = Math.max(0, Math.min(sliderWidth - textWidth, thumbPosition - textWidth / 2));
-    return leftPosition;
+    return leftPosition + Theme.spacing.md; // Add padding offset
   };
 
   // Right-to-left time input formatting
@@ -1374,12 +1679,37 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
           {/* Add Drink Button or Timer Section */}
           {!timerStarted ? (
             <>
-              <View style={styles.addDrinkSection}>
-                <TouchableOpacity style={styles.addButton} onPress={handleAddDrink}>
-                  <Text style={styles.addButtonText}>+</Text>
-                </TouchableOpacity>
-                <Text style={styles.addDrinkLabel}>add a drink</Text>
-              </View>
+              {!addDrinkState.showThreeButtons ? (
+                <View style={styles.addDrinkSection}>
+                  <TouchableOpacity style={styles.addButton} onPress={handleAddDrink}>
+                    <Text style={styles.addButtonText}>+</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.addDrinkLabel}>add a drink</Text>
+                </View>
+              ) : (
+                <View style={styles.threeButtonsSection}>
+                  <View style={styles.buttonOption}>
+                    <TouchableOpacity style={styles.optionButton} onPress={handleSearchFromDrink}>
+                      <Text style={styles.addButtonText}>+</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.optionLabel}>search for drink</Text>
+                  </View>
+                  
+                  <View style={styles.buttonOption}>
+                    <TouchableOpacity style={styles.optionButton} onPress={handleQuickAdd}>
+                      <Text style={styles.addButtonText}>+</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.optionLabel}>quick add</Text>
+                  </View>
+                  
+                  <View style={styles.buttonOption}>
+                    <TouchableOpacity style={styles.optionButton} onPress={handleAddCustomDrink}>
+                      <Text style={styles.addButtonText}>+</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.optionLabel}>add custom drink</Text>
+                  </View>
+                </View>
+              )}
               
               {/* Drinks of the Day Section */}
               {todaysDrinks.length > 0 && (
@@ -2115,6 +2445,350 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
           </View>
         </View>
       </Modal>
+
+      {/* NEW: Search Drink Modal */}
+      <Modal
+        visible={addDrinkState.showSearchModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={handleSearchModalCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.searchModalContent}>
+            <Text style={styles.modalTitle}>Search for Drink</Text>
+            
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search drinks..."
+              placeholderTextColor={Theme.colors.textTertiary}
+              value={addDrinkState.searchQuery}
+              onChangeText={handleSearchQueryChange}
+              autoFocus={true}
+            />
+            
+            <ScrollView style={styles.drinksListContainer} showsVerticalScrollIndicator={false}>
+              {addDrinkState.filteredDrinks.map((drink, index) => (
+                <View key={index} style={styles.drinkListItemContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.drinkListItem,
+                      addDrinkState.searchDrinkData.selectedDrink?.name === drink.name && styles.drinkListItemSelected
+                    ]}
+                    onPress={() => handleSelectDrink(drink)}
+                  >
+                    <View style={styles.drinkListItemHeader}>
+                      <Text style={styles.drinkListItemName}>{drink.name}</Text>
+                      <Text style={styles.drinkListItemFlOz}>{drink.flOz} fl oz</Text>
+                    </View>
+                    <Text style={styles.drinkListItemCaffeine}>
+                      {drink.caffeineMg}mg caffeine ({drink.mgPerFlOz} mg/fl oz)
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.starButton}
+                    onPress={() => handleToggleFavorite(drink)}
+                  >
+                    <Text style={[
+                      styles.starIcon,
+                      drink.isFavorited && styles.starIconFavorited
+                    ]}>
+                      ★
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.searchModalButtons}>
+              <TouchableOpacity style={styles.searchCancelButton} onPress={handleSearchModalCancel}>
+                <Text style={styles.cancelButtonText}>✕</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.searchConfirmButton,
+                  !addDrinkState.searchDrinkData.selectedDrink && styles.searchConfirmButtonDisabled
+                ]} 
+                onPress={handleSearchModalConfirm}
+                disabled={!addDrinkState.searchDrinkData.selectedDrink}
+              >
+                <Text style={styles.confirmButtonText}>✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Quick Add Modal */}
+      <Modal
+        visible={addDrinkState.showQuickAddModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={handleQuickAddModalCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.searchModalContent}>
+            <Text style={styles.modalTitle}>Quick Add</Text>
+            <Text style={styles.modalSubtitle}>Select from your favorited drinks</Text>
+            
+            <ScrollView style={styles.drinksListContainer} showsVerticalScrollIndicator={false}>
+              {addDrinkState.favoritedDrinks.map((drink, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.drinkListItem,
+                    styles.quickAddDrinkItem, // Add spacing for quick add modal
+                    addDrinkState.searchDrinkData.selectedDrink?.name === drink.name && styles.drinkListItemSelected
+                  ]}
+                  onPress={() => handleSelectDrink(drink)}
+                >
+                  <View style={styles.drinkListItemHeader}>
+                    <Text style={styles.drinkListItemName}>{drink.name}</Text>
+                    <Text style={styles.drinkListItemFlOz}>{drink.flOz} fl oz</Text>
+                  </View>
+                  <Text style={styles.drinkListItemCaffeine}>
+                    {drink.caffeineMg}mg caffeine ({drink.mgPerFlOz} mg/fl oz)
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <View style={styles.searchModalButtons}>
+              <TouchableOpacity style={styles.searchCancelButton} onPress={handleQuickAddModalCancel}>
+                <Text style={styles.cancelButtonText}>✕</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[
+                  styles.searchConfirmButton,
+                  !addDrinkState.searchDrinkData.selectedDrink && styles.searchConfirmButtonDisabled
+                ]} 
+                onPress={handleQuickAddModalConfirm}
+                disabled={!addDrinkState.searchDrinkData.selectedDrink}
+              >
+                <Text style={styles.confirmButtonText}>✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Custom Drink Modal */}
+      <Modal
+        visible={addDrinkState.showCustomDrinkModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={handleCustomDrinkModalCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.questionsModalContent}>
+            <Text style={styles.modalTitle}>Add Custom Drink</Text>
+            
+            <ScrollView style={styles.questionsScrollContainer} showsVerticalScrollIndicator={false}>
+              {/* Drink Name */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>what's the drink name?</Text>
+                <TextInput
+                  style={styles.drinkNameInputModal}
+                  placeholder="Coffee, Tea, etc."
+                  placeholderTextColor={Theme.colors.textTertiary}
+                  value={addDrinkState.customDrinkData.drinkName}
+                  onChangeText={(text) => setAddDrinkState(prev => ({
+                    ...prev,
+                    customDrinkData: { ...prev.customDrinkData, drinkName: text }
+                  }))}
+                  autoFocus={true}
+                />
+              </View>
+
+              {/* Caffeine Amount */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how much caffeine was in the drink?</Text>
+                <View style={styles.questionRow}>
+                  <TextInput
+                    style={styles.caffeineInputModal}
+                    placeholder="mg"
+                    placeholderTextColor={Theme.colors.textTertiary}
+                    value={addDrinkState.customDrinkData.caffeineAmount}
+                    onChangeText={(text) => setAddDrinkState(prev => ({
+                      ...prev,
+                      customDrinkData: { ...prev.customDrinkData, caffeineAmount: text }
+                    }))}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              {/* Completion Percentage */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how much of the drink did you complete?</Text>
+                <View style={styles.sliderContainer}>
+                  <View style={styles.sliderWrapper}>
+                    <Text style={[
+                      styles.percentageText,
+                      {
+                        position: 'absolute',
+                        left: getPercentageTextPosition(addDrinkState.customDrinkData.completionPercentage),
+                        top: -5,
+                        zIndex: 1
+                      }
+                    ]}>
+                      {Math.round(addDrinkState.customDrinkData.completionPercentage)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={100}
+                      value={addDrinkState.customDrinkData.completionPercentage}
+                      onValueChange={(value) => setAddDrinkState(prev => ({
+                        ...prev,
+                        customDrinkData: { ...prev.customDrinkData, completionPercentage: value }
+                      }))}
+                      step={1}
+                      minimumTrackTintColor={Theme.colors.primaryBlue}
+                      maximumTrackTintColor={Theme.colors.cardBg}
+                      thumbTintColor={Theme.colors.primaryBlue}
+                    />
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+            
+            <View style={styles.questionsModalButtons}>
+              <TouchableOpacity style={styles.searchCancelButton} onPress={handleCustomDrinkModalCancel}>
+                <Text style={styles.cancelButtonText}>✕</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.searchConfirmButton} onPress={handleRecordCustomDrink}>
+                <Text style={styles.confirmButtonText}>✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NEW: Questions Modal */}
+      <Modal
+        visible={addDrinkState.showQuestionsModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={handleQuestionsModalCancel}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.questionsModalContent}>
+            <Text style={styles.modalTitle}>Drink Details</Text>
+            
+            {addDrinkState.searchDrinkData.selectedDrink && (
+              <Text style={styles.selectedDrinkName}>
+                {addDrinkState.searchDrinkData.selectedDrink.name}
+              </Text>
+            )}
+            
+            <ScrollView style={styles.questionsScrollContainer} showsVerticalScrollIndicator={false}>
+              {/* How many oz did you drink? */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how many oz did you drink?</Text>
+                <TextInput
+                  style={styles.ouncesInput}
+                  placeholder="fl oz"
+                  placeholderTextColor={Theme.colors.textTertiary}
+                  value={addDrinkState.searchDrinkData.ouncesConsumed}
+                  onChangeText={(text) => setAddDrinkState(prev => ({
+                    ...prev,
+                    searchDrinkData: { ...prev.searchDrinkData, ouncesConsumed: text }
+                  }))}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+
+                             {/* How long did you sip for? */}
+               <View style={styles.questionSectionNew}>
+                 <Text style={styles.questionTextNew}>how long did you sip for?</Text>
+                 <TextInput
+                   style={styles.sipDurationInput}
+                   value={addDrinkState.searchDrinkData.sipDuration}
+                   onChangeText={handleSipDurationChange}
+                   keyboardType="numeric"
+                   placeholder="00:00:00"
+                   placeholderTextColor={Theme.colors.textTertiary}
+                   selection={{ 
+                     start: addDrinkState.searchDrinkData.sipDuration.length, 
+                     end: addDrinkState.searchDrinkData.sipDuration.length 
+                   }}
+                   selectTextOnFocus={false}
+                 />
+               </View>
+
+              {/* How long ago did you finish? */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how long ago did you finish?</Text>
+                <View style={styles.timeAgoButtonsContainer}>
+                  {TIME_AGO_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.hours}
+                      style={[
+                        styles.timeAgoButton,
+                        addDrinkState.searchDrinkData.hoursAgo === option.hours && styles.timeAgoButtonSelected
+                      ]}
+                      onPress={() => setAddDrinkState(prev => ({
+                        ...prev,
+                        searchDrinkData: { ...prev.searchDrinkData, hoursAgo: option.hours }
+                      }))}
+                    >
+                      <Text style={[
+                        styles.timeAgoButtonText,
+                        addDrinkState.searchDrinkData.hoursAgo === option.hours && styles.timeAgoButtonTextSelected
+                      ]}>
+                        {option.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* How much of the drink did you complete? */}
+              <View style={styles.questionSectionNew}>
+                <Text style={styles.questionTextNew}>how much of the drink did you complete?</Text>
+                <View style={styles.sliderContainer}>
+                  <View style={styles.sliderWrapper}>
+                    <Text style={[
+                      styles.percentageText,
+                      {
+                        position: 'absolute',
+                        left: getPercentageTextPosition(addDrinkState.searchDrinkData.completionPercentage),
+                        top: -5,
+                        zIndex: 1
+                      }
+                    ]}>
+                      {Math.round(addDrinkState.searchDrinkData.completionPercentage)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={100}
+                      value={addDrinkState.searchDrinkData.completionPercentage}
+                      onValueChange={(value) => setAddDrinkState(prev => ({
+                        ...prev,
+                        searchDrinkData: { ...prev.searchDrinkData, completionPercentage: value }
+                      }))}
+                      step={1}
+                      minimumTrackTintColor={Theme.colors.primaryBlue}
+                      maximumTrackTintColor={Theme.colors.cardBg}
+                      thumbTintColor={Theme.colors.primaryBlue}
+                    />
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+            
+            <View style={styles.questionsModalButtons}>
+              <TouchableOpacity style={styles.searchCancelButton} onPress={handleQuestionsModalCancel}>
+                <Text style={styles.cancelButtonText}>✕</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.searchConfirmButton} onPress={handleRecordSearchDrink}>
+                <Text style={styles.confirmButtonText}>✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2270,6 +2944,38 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
     marginTop: Theme.spacing.sm,
   },
+  // Three buttons section styles
+  threeButtonsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: Theme.spacing.md,
+  },
+  buttonOption: {
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: Theme.spacing.xs,
+  },
+  optionButton: {
+    width: 60,
+    height: 60,
+    backgroundColor: Theme.colors.primaryBlue,
+    borderRadius: Theme.borderRadius.medium,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: Theme.colors.primaryBlue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  optionLabel: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+    marginTop: Theme.spacing.sm,
+    textAlign: 'center',
+  },
   timerSection: {
     alignItems: 'center',
   },
@@ -2381,6 +3087,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: width - (Theme.spacing.lg * 2),
     paddingTop: 25, // Reduced to bring percentage closer to slider
+    paddingHorizontal: Theme.spacing.md, // Add horizontal padding to prevent thumb cutoff
   },
   percentageText: {
     ...Theme.fonts.sectionHeading,
@@ -2389,7 +3096,7 @@ const styles = StyleSheet.create({
     width: 50,
   },
   slider: {
-    width: width - (Theme.spacing.lg * 2),
+    width: width - (Theme.spacing.lg * 2) - (Theme.spacing.md * 2), // Reduce width to account for padding
     height: 20,
   },
   customTimeInput: {
@@ -2961,5 +3668,207 @@ const styles = StyleSheet.create({
   exerciseRemoveTextSelected: {
     color: Theme.colors.accentRed,
     fontWeight: 'bold',
+  },
+
+  // NEW: Search modal styles
+  searchModalContent: {
+    backgroundColor: Theme.colors.canvas,
+    borderRadius: 16,
+    padding: Theme.spacing.lg,
+    margin: Theme.spacing.lg,
+    width: width - (Theme.spacing.lg * 2),
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  searchInput: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    fontSize: 16,
+    marginBottom: Theme.spacing.md,
+    color: Theme.colors.textPrimary,
+  },
+  drinksListContainer: {
+    maxHeight: 300,
+    marginBottom: Theme.spacing.lg,
+  },
+  drinkListItemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.sm,
+  },
+  drinkListItem: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    flex: 1,
+    marginRight: Theme.spacing.sm,
+  },
+  drinkListItemSelected: {
+    borderColor: Theme.colors.primaryBlue,
+    backgroundColor: Theme.colors.primaryBlue + '20',
+  },
+  quickAddDrinkItem: {
+    marginRight: 0, // Remove right margin for quick add modal
+    marginBottom: Theme.spacing.md, // Add bottom margin for spacing between items
+  },
+  drinkListItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xs,
+  },
+  drinkListItemName: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.textPrimary,
+    flex: 1,
+  },
+  drinkListItemFlOz: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+  },
+  drinkListItemCaffeine: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textSecondary,
+  },
+  searchModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Theme.spacing.md,
+  },
+  searchCancelButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: Theme.colors.accentRed,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchConfirmButton: {
+    width: 50,
+    height: 50,
+    backgroundColor: Theme.colors.primaryGreen,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchConfirmButtonDisabled: {
+    backgroundColor: Theme.colors.cardBg,
+  },
+  confirmButtonText: {
+    fontSize: 24,
+    color: Theme.colors.white,
+  },
+  starButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 20,
+  },
+  starIcon: {
+    fontSize: 16,
+    color: Theme.colors.textTertiary,
+  },
+  starIconFavorited: {
+    color: Theme.colors.accentOrange,
+  },
+
+  // NEW: Questions modal styles
+  questionsModalContent: {
+    backgroundColor: Theme.colors.canvas,
+    borderRadius: 16,
+    padding: Theme.spacing.lg,
+    margin: Theme.spacing.lg,
+    width: width - (Theme.spacing.lg * 2),
+    maxWidth: 400,
+    maxHeight: '85%',
+  },
+  selectedDrinkName: {
+    ...Theme.fonts.sectionHeading,
+    color: Theme.colors.primaryBlue,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  questionsScrollContainer: {
+    maxHeight: 400,
+    marginBottom: Theme.spacing.lg,
+  },
+  questionSectionNew: {
+    marginBottom: Theme.spacing.lg,
+  },
+  questionTextNew: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textPrimary,
+    marginBottom: Theme.spacing.sm,
+  },
+  ouncesInput: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    fontSize: 16,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  sipDurationInput: {
+    fontSize: 48,
+    fontWeight: '600',
+    color: Theme.colors.textPrimary,
+    backgroundColor: 'transparent',
+    textAlign: 'center',
+    marginTop: Theme.spacing.sm,
+    paddingVertical: Theme.spacing.xs,
+    paddingHorizontal: Theme.spacing.sm,
+  },
+  timeAgoButtonsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Theme.spacing.sm,
+  },
+  timeAgoButton: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 8,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  timeAgoButtonSelected: {
+    backgroundColor: Theme.colors.primaryBlue,
+    borderColor: Theme.colors.primaryBlue,
+  },
+  timeAgoButtonText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+  },
+  timeAgoButtonTextSelected: {
+    color: Theme.colors.white,
+  },
+  questionsModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: Theme.spacing.md,
+  },
+  
+  // NEW: Custom drink modal styles
+  drinkNameInputModal: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    fontSize: 16,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  caffeineInputModal: {
+    backgroundColor: Theme.colors.cardBg,
+    borderRadius: 12,
+    padding: Theme.spacing.md,
+    fontSize: 16,
+    color: Theme.colors.textPrimary,
+    textAlign: 'center',
+    width: 120,
   },
 }); 

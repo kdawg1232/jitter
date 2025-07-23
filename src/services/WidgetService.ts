@@ -221,13 +221,30 @@ export class WidgetService {
       // Update native widget via App Groups
       if (JitterWidgetBridge) {
         try {
-          await JitterWidgetBridge.updateWidgetData(widgetData);
-          console.log('[WidgetService] 📱 Native widget data updated via App Groups');
+          console.log('[WidgetService] 📱 Attempting to update native widget data...');
+          console.log('[WidgetService] 📦 Data being sent:', JSON.stringify(widgetData, null, 2));
+          
+          const result = await JitterWidgetBridge.updateWidgetData(widgetData);
+          
+          if (result.success) {
+            console.log('[WidgetService] ✅ Native widget data updated successfully via App Groups');
+          } else {
+            console.error('[WidgetService] ❌ Native bridge reported failure:', result);
+          }
         } catch (error) {
           console.error('[WidgetService] ❌ Failed to update native widget:', error);
+          console.error('[WidgetService] 🔍 Bridge available:', !!JitterWidgetBridge);
+          if (error instanceof Error) {
+            console.error('[WidgetService] 🔍 Error details:', {
+              name: error.name,
+              message: error.message,
+              stack: error.stack
+            });
+          }
         }
       } else {
         console.warn('[WidgetService] ⚠️ Native bridge not available');
+        console.warn('[WidgetService] 🔍 This is normal in development but should work in EAS builds');
       }
       
     } catch (error) {
