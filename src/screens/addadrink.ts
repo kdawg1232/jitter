@@ -97,12 +97,16 @@ export const createDrinkRecordFromSearchData = (
 ): DrinkRecord => {
   const actualCaffeine = calculateCaffeineFromSearchDrink(data);
   const timestamp = data.hoursAgo !== null ? calculateConsumptionTime(data.hoursAgo) : new Date();
+  // MOD: full caffeine of the portion entered (irrespective of completion)
+  const fullCaffeine = data.selectedDrink
+    ? (parseFloat(data.ouncesConsumed || '0') || 0) * data.selectedDrink.mgPerFlOz
+    : actualCaffeine;
   
   return {
     id: Date.now().toString(),
     userId,
     name: data.selectedDrink?.name || 'Unknown Drink',
-    caffeineAmount: actualCaffeine, // Total caffeine that would be in the full amount
+    caffeineAmount: Math.round(fullCaffeine), // Total caffeine present in the amount served
     completionPercentage: data.completionPercentage,
     timeToConsume: data.sipDuration,
     actualCaffeineConsumed: actualCaffeine,

@@ -473,21 +473,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.socialContainer}>
             <TouchableOpacity 
               style={styles.socialButton}
-              onPress={() => Linking.openURL('https://twitter.com/jitterapp')}
+              onPress={() => Linking.openURL('https://x.com/thejitterapp')}
             >
               <Text style={styles.socialIcon}>𝕏</Text>
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.socialButton}
-              onPress={() => Linking.openURL('https://instagram.com/jitterapp')}
+              onPress={() => Linking.openURL('https://www.instagram.com/thejitterapp/')}
             >
-              <Image source={require('../../assets/instagramicon.png')} style={styles.socialIconImage} />
+              <Image source={require('../../assets/instagramrealreal.png')} style={styles.socialIconImage} />
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.socialButton}
-              onPress={() => Linking.openURL('https://tiktok.com/@jitterapp')}
+              onPress={() => Linking.openURL('https://www.tiktok.com/@thejitterapp')}
             >
-              <Image source={require('../../assets/png-transparent-tiktok-icon-thumbnail.png')} style={styles.socialIconImage} />
+              <Image source={require('../../assets/tiktokrealreal.png')} style={styles.socialIconImage} />
             </TouchableOpacity>
           </View>
         </View>
@@ -752,6 +752,7 @@ const styles = StyleSheet.create({
   },
   socialIcon: {
     fontSize: 24,
+    textAlign: 'center',
   },
   socialIconImage: {
     width: 24,

@@ -46,8 +46,8 @@ export class CaffScoreService {
       return result;
     } else {
       // Too high = overstimulation, poor focus
-      console.log('[CaffScoreService] 🔥 Too high, overstimulation: 0.2');
-      return 0.2;
+      console.log('[CaffScoreService] 🔥 Too high, overstimulation: 0.05');
+      return 0.05; // MOD: harsher penalty for severe overstimulation
     }
   }
 
@@ -145,7 +145,7 @@ export class CaffScoreService {
         }
       } else {
         // Outside plateau zone - use current penalty logic
-        const result = Math.max(0.2, 0.5 + avgRate * 0.1);
+        const result = Math.max(0.1, 0.5 + avgRate * 0.1); // MOD: allow score to dip lower when rate is declining sharply
         console.log('[CaffScoreService] 📉 Declining rate, suboptimal:', result.toFixed(3));
         return result;
       }
@@ -597,8 +597,10 @@ export class CaffScoreService {
     // Calculate peak caffeine level
     const peakCaffeineLevel = CaffScoreService.calculatePeakCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
     
-    // Calculate tolerance threshold
-    const toleranceThreshold = userProfile.meanDailyCaffeineMg || 200;
+    // MOD: establish realistic lower bound; avoid defaulting 0 mg users to 200 mg
+    const toleranceThreshold = (userProfile.meanDailyCaffeineMg !== null && userProfile.meanDailyCaffeineMg !== undefined)
+      ? Math.max(50, userProfile.meanDailyCaffeineMg)
+      : 200;
     
     console.log('[CaffScoreService] ☕ Caffeine levels:', {
       current: currentCaffeineLevel.toFixed(1),
@@ -641,14 +643,16 @@ export class CaffScoreService {
     
     // Apply the enhanced CaffScore formula with new factors
     // CaffScore = 100 × (C^1.2) × (R^0.1) × (T^0.25) × (F^0.25) × (A^0.4) × (S^0.15) × (M^0.1) × (E^0.1)
-    const currentLevelComponent = Math.pow(currentLevel, 1.2);          // Current level most important
-    const risingRateComponent = Math.pow(risingRate, 0.1);              // Reduced impact of rate
+    // MOD: rebalance component exponents
+    const currentLevelComponent = Math.pow(currentLevel, 1.0);          // Keep primary weight without extra non-linearity
+    const risingRateComponent = Math.pow(risingRate, 0.25);             // Give rising rate meaningful influence
     const toleranceComponent = Math.pow(tolerance, 0.25);               // Slightly reduced 
     const focusComponent = Math.pow(focus, 0.25);                       // Slightly reduced
-    const activityComponent = Math.pow(currentActivity, 0.4);           // Reduced from 0.5
+    const activityComponent = Math.pow(currentActivity, 0.35);          // Slightly reduced
     const stressComponent = Math.pow(stressFactor, 0.15);               // New stress factor
-    const foodTimingComponent = Math.pow(foodTimingFactor, 0.1);        // New food timing factor
-    const exerciseComponent = Math.pow(exerciseFactor, 0.1);            // New exercise factor
+    // Clamp mod factors above 1 so they cannot boost score
+    const foodTimingComponent = Math.pow(Math.min(foodTimingFactor, 1.0), 0.1);
+    const exerciseComponent = Math.pow(Math.min(exerciseFactor, 1.0), 0.1);
     
     const rawScore = 100 * currentLevelComponent * risingRateComponent * toleranceComponent * 
                      focusComponent * activityComponent * stressComponent * foodTimingComponent * exerciseComponent;
@@ -776,7 +780,7 @@ export class CaffScoreService {
         break;
     }
     
-    return Math.max(baseHalfLife, 2.0); // Minimum 2 hours
+    return Math.min(Math.max(baseHalfLife, 2.0), 24.0); // MOD: Clamp half-life to 2–24 h range
   }
 
   /**
