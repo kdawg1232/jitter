@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 
 import { StorageService, CaffScoreService, NotificationService, WidgetService, calculateStatus } from './index';
-import { CaffeineDeclineNotification, DailyReminderNotification, StatusUpdateNotification } from './notifications';
+import { DailyReminderNotification, CaffScoreReminderNotification } from './notifications';
 
 export class BackgroundService {
   private static intervalId: NodeJS.Timeout | null = null;
@@ -32,6 +32,9 @@ export class BackgroundService {
     // Listen for app state changes to handle background/foreground transitions
     this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
 
+    // Schedule CaffScore reminder notifications
+    await this.scheduleCaffScoreReminders();
+
     console.log('[BackgroundService] ✅ Periodic calculation started');
   }
 
@@ -51,6 +54,23 @@ export class BackgroundService {
 
     this.isRunning = false;
     console.log('[BackgroundService] 🛑 Periodic calculation stopped');
+  }
+
+  /**
+   * Schedule CaffScore reminder notifications (10 AM and 4 PM daily)
+   */
+  private static async scheduleCaffScoreReminders(): Promise<void> {
+    try {
+      const notificationsEnabled = await NotificationService.areNotificationsEnabled();
+      if (notificationsEnabled) {
+        await CaffScoreReminderNotification.schedule();
+        console.log('[BackgroundService] ✅ CaffScore reminder notifications scheduled');
+      } else {
+        console.log('[BackgroundService] ⚠️ Notifications disabled - skipping CaffScore reminders');
+      }
+    } catch (error) {
+      console.error('[BackgroundService] ❌ Failed to schedule CaffScore reminders:', error);
+    }
   }
 
   /**
@@ -104,7 +124,7 @@ export class BackgroundService {
   }
 
   /**
-   * Calculate CaffScore and send notification if status changed
+   * Calculate CaffScore and update widget data
    */
   private static async calculateAndNotify(): Promise<void> {
     try {
@@ -131,35 +151,15 @@ export class BackgroundService {
       );
       const newScore = focusResult.score;
 
-      // Retrieve previous score & status so we can detect changes
+      // Retrieve previous score so we can detect changes
       const previousScore = await StorageService.getPreviousCaffScore(
         userProfile.userId,
-      );
-      const previousStatusText =
-        (await AsyncStorage.getItem(`status_${userProfile.userId}`)) || '';
-
-      // NEW: Check for caffeine decline notification opportunity
-      await CaffeineDeclineNotification.checkAndSend(newScore, previousScore, userProfile.userId);
-
-      // Determine the new status text
-      const statusResult = calculateStatus(
-        newScore,
-        previousScore,
-        previousStatusText,
       );
 
       // Persist the newly calculated score so the next run has the correct baseline
       await StorageService.savePreviousCaffScore(userProfile.userId, newScore);
 
-      // If the text changed we fire a local notification and remember it
-      if (statusResult.text && statusResult.text !== previousStatusText) {
-        console.log('[BackgroundService] 📨 Status changed – sending notification:', statusResult.text);
-        
-        // Use the new StatusUpdateNotification class
-        await StatusUpdateNotification.checkAndSend(statusResult.text, userProfile.userId, previousStatusText);
-      } else {
-        console.log('[BackgroundService] ✅ Status unchanged');
-      }
+      console.log('[BackgroundService] ✅ CaffScore calculated:', newScore);
 
       // Update widget data
       await WidgetService.updateWidgetData(userProfile.userId);

@@ -70,31 +70,6 @@ export class SetupNotification {
     }
   }
 
-  /**
-   * Send notification when user first reaches a high CaffScore
-   */
-  static async sendFirstHighScore(score: number): Promise<boolean> {
-    try {
-      const success = await NotificationService.scheduleLocalNotification(
-        'Great CaffScore!',
-        `You reached ${Math.round(score)} - this is optimal caffeine effect for maximum focus!`,
-        { 
-          type: 'first_high_score',
-          score 
-        }
-      );
-
-      if (success) {
-        console.log('[SetupNotification] ✅ First high score notification sent:', score);
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('[SetupNotification] ❌ Failed to send first high score notification:', error);
-      return false;
-    }
-  }
 
   /**
    * Get all setup notification types
@@ -116,11 +91,6 @@ export class SetupNotification {
         title: 'Welcome to Jitter!',
         description: 'Sent after completing onboarding'
       },
-      {
-        type: 'first_high_score',
-        title: 'Great CaffScore!',
-        description: 'Sent when user first reaches 80+ CaffScore'
-      }
     ];
   }
 } 

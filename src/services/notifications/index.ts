@@ -1,8 +1,7 @@
 // Notification classes organized by type
-export { CaffeineDeclineNotification } from './CaffeineDeclineNotification';
 export { DailyReminderNotification } from './DailyReminderNotification';
-export { StatusUpdateNotification } from './StatusUpdateNotification';
 export { SetupNotification } from './SetupNotification';
+export { CaffScoreReminderNotification } from './CaffScoreReminderNotification';
 
 // Type definitions for notification data
 export interface NotificationConfig {
@@ -14,9 +13,8 @@ export interface NotificationConfig {
 
 // Centralized notification type constants
 export const NOTIFICATION_TYPES = {
-  CAFFEINE_DECLINE: 'caffeine_decline',
   DAILY_CHECK_IN: 'daily_check_in',
-  STATUS_UPDATE: 'status_update',
+  CAFFEINE_SCORE_REMINDER: 'caffeine_score_reminder',
   SETUP_COMPLETE: 'setup_complete',
   WIDGET_SETUP_COMPLETE: 'widget_setup_complete',
   WELCOME: 'welcome',
@@ -27,17 +25,12 @@ export const NOTIFICATION_TYPES = {
 export function getAllNotificationTypes() {
   return [
     {
-      category: 'Caffeine Tracking',
+      category: 'CaffScore Tracking',
       notifications: [
         {
-          type: NOTIFICATION_TYPES.CAFFEINE_DECLINE,
-          name: 'Caffeine Decline',
-          description: 'Suggests more caffeine when levels are declining'
-        },
-        {
-          type: NOTIFICATION_TYPES.STATUS_UPDATE,
-          name: 'Status Updates',
-          description: 'Alerts when caffeine status changes'
+          type: NOTIFICATION_TYPES.CAFFEINE_SCORE_REMINDER,
+          name: 'CaffScore Reminder',
+          description: 'Reminds to check CaffScore and record caffeine at 10 AM and 4 PM'
         }
       ]
     },
