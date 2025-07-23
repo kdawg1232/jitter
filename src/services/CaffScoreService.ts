@@ -115,7 +115,8 @@ export class CaffScoreService {
       earlierRate: earlierRate.toFixed(2),
       avgRate: avgRate.toFixed(2),
       peakLevel: peakLevel.toFixed(1),
-      sustainedFocusZone: inSustainedZone
+      sustainedFocusZone: inSustainedZone,
+      rateCategory: avgRate > 5 ? 'TOO_FAST_OVERSTIMULATING' : avgRate > 2 ? 'OPTIMAL_RANGE' : avgRate > 0 ? 'SLOW_BUILDING' : 'DECLINING'
     });
     
     // Optimal rise rate for focus: 2-5 mg/min
@@ -160,8 +161,16 @@ export class CaffScoreService {
       return result;
     } else {
       // Too fast = overstimulating
-      const result = Math.max(0.4 - (avgRate - optimalMaxRate) * 0.05, 0.1);
-      console.log('[CaffScoreService] 🚀 Too fast, overstimulating:', result.toFixed(3));
+      const penalty = (avgRate - optimalMaxRate) * 0.05;
+      const result = Math.max(0.4 - penalty, 0.1);
+      console.log('[CaffScoreService] 🚀 TOO FAST - Overstimulating consumption pattern detected!', {
+        avgRateMinute: avgRate.toFixed(2),
+        optimalMax: optimalMaxRate,
+        excessRate: (avgRate - optimalMaxRate).toFixed(2),
+        penalty: penalty.toFixed(3),
+        finalResult: result.toFixed(3),
+        explanation: 'Consuming caffeine too quickly reduces focus effectiveness'
+      });
       return result;
     }
   }

@@ -6,4 +6,7 @@ export { DeepLinkService } from './DeepLinkService';
 export { PlanningService } from './PlanningService';
 export { NotificationService } from './NotificationService';
 export { BackgroundService } from './BackgroundService';
-export { calculateStatus, StatusResult, StatusTrend } from './StatusService'; 
+export { calculateStatus, StatusResult, StatusTrend } from './StatusService';
+
+// Organized notification classes
+export * from './notifications'; 

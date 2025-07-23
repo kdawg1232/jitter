@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 
 import { StorageService, CaffScoreService, NotificationService, WidgetService, calculateStatus } from './index';
+import { CaffeineDeclineNotification, DailyReminderNotification, StatusUpdateNotification } from './notifications';
 
 export class BackgroundService {
   private static intervalId: NodeJS.Timeout | null = null;
@@ -63,7 +64,7 @@ export class BackgroundService {
   };
 
   /**
-   * Perform daily reset of tracking data at 10:00 AM local time and notify the user.
+   * Perform daily reset of tracking data at 6:00 AM local time and notify the user.
    */
   private static async performDailyReset(): Promise<void> {
     try {
@@ -73,8 +74,8 @@ export class BackgroundService {
       const now = new Date();
       const todayKey = now.toISOString().split('T')[0];
 
-      // Only reset after 10:00 AM local time
-      if (now.getHours() < 10) return;
+      // Only reset after 6:00 AM local time
+      if (now.getHours() < 6) return;
 
       // Check if reset already ran today
       const lastResetKey = `daily_reset_${userProfile.userId}`;
@@ -91,11 +92,7 @@ export class BackgroundService {
       // Send reminder notification
       const notificationsEnabled = await NotificationService.areNotificationsEnabled();
       if (notificationsEnabled) {
-        await NotificationService.scheduleLocalNotification(
-          'Daily Jitter check-in',
-          'Please update your sleep, stress, meal and exercise data for today.',
-          { type: 'daily_check_in' },
-        );
+        await DailyReminderNotification.sendDailyResetNotification();
       }
 
       // Mark reset done for today
@@ -113,7 +110,7 @@ export class BackgroundService {
     try {
       console.log('[BackgroundService] 🔄 Running CaffScore calculation');
 
-      // Perform 10AM reset & notification if needed
+      // Perform 6AM reset & notification if needed
       await this.performDailyReset();
 
       const userProfile = await StorageService.getUserProfile();
@@ -141,6 +138,9 @@ export class BackgroundService {
       const previousStatusText =
         (await AsyncStorage.getItem(`status_${userProfile.userId}`)) || '';
 
+      // NEW: Check for caffeine decline notification opportunity
+      await CaffeineDeclineNotification.checkAndSend(newScore, previousScore, userProfile.userId);
+
       // Determine the new status text
       const statusResult = calculateStatus(
         newScore,
@@ -154,21 +154,9 @@ export class BackgroundService {
       // If the text changed we fire a local notification and remember it
       if (statusResult.text && statusResult.text !== previousStatusText) {
         console.log('[BackgroundService] 📨 Status changed – sending notification:', statusResult.text);
-        await AsyncStorage.setItem(
-          `status_${userProfile.userId}`,
-          statusResult.text,
-        );
-
-        // Check if notifications are enabled before sending
-        const notificationsEnabled = await NotificationService.areNotificationsEnabled();
-        if (notificationsEnabled) {
-          // Fire an immediate local notification
-          await NotificationService.scheduleLocalNotification(
-            statusResult.text,
-            statusResult.text,
-            { type: 'status_update' },
-          );
-        }
+        
+        // Use the new StatusUpdateNotification class
+        await StatusUpdateNotification.checkAndSend(statusResult.text, userProfile.userId, previousStatusText);
       } else {
         console.log('[BackgroundService] ✅ Status unchanged');
       }

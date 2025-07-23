@@ -1390,12 +1390,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
 
   // Calculate percentage text position for slider (improved positioning)
   const getPercentageTextPosition = (percentage?: number) => {
-    const sliderWidth = width - (Theme.spacing.lg * 2) - (Theme.spacing.md * 2); // Account for padding
+    // Increased padding to prevent thumb cutoff
+    const horizontalPadding = Theme.spacing.lg; // Increased from md
+    const sliderWidth = width - (Theme.spacing.lg * 2) - (horizontalPadding * 2);
     const percentageValue = percentage !== undefined ? percentage : completionPercentage;
     const thumbPosition = (percentageValue / 100) * sliderWidth;
     const textWidth = 50; // Approximate width of percentage text
     const leftPosition = Math.max(0, Math.min(sliderWidth - textWidth, thumbPosition - textWidth / 2));
-    return leftPosition + Theme.spacing.md; // Add padding offset
+    return leftPosition + horizontalPadding; // Use the increased padding
   };
 
   // Right-to-left time input formatting
@@ -2395,6 +2397,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                 Shows your current focus potential from caffeine based on what's actively in your system right now.
               </Text>
               
+              {/* CaffScore Ranges */}
+              <Text style={styles.sectionTitle}>🎯 Score Ranges</Text>
+              <View style={styles.scoreRangeItem}>
+                <Text style={styles.scoreRangeText}>
+                  <Text style={[styles.scoreRangeNumber, { color: Theme.colors.primaryGreen }]}>80-100</Text>
+                  <Text style={styles.scoreRangeLabel}> Peak Effect</Text>
+                </Text>
+                <Text style={styles.scoreRangeDescription}>
+                  Optimal caffeine levels - maximum focus and alertness
+                </Text>
+              </View>
+              
+              <View style={styles.scoreRangeItem}>
+                <Text style={styles.scoreRangeText}>
+                  <Text style={[styles.scoreRangeNumber, { color: Theme.colors.primaryBlue }]}>50-79</Text>
+                  <Text style={styles.scoreRangeLabel}> Moderate Effect</Text>
+                </Text>
+                <Text style={styles.scoreRangeDescription}>
+                  Good caffeine levels - noticeable focus enhancement
+                </Text>
+              </View>
+              
+              <View style={styles.scoreRangeItem}>
+                <Text style={styles.scoreRangeText}>
+                  <Text style={[styles.scoreRangeNumber, { color: Theme.colors.accentOrange }]}>25-49</Text>
+                  <Text style={styles.scoreRangeLabel}> Low Effect</Text>
+                </Text>
+                <Text style={styles.scoreRangeDescription}>
+                  Low caffeine levels - mild stimulation present
+                </Text>
+              </View>
+              
+              <View style={styles.scoreRangeItem}>
+                <Text style={styles.scoreRangeText}>
+                  <Text style={[styles.scoreRangeNumber, { color: Theme.colors.accentRed }]}>0-24</Text>
+                  <Text style={styles.scoreRangeLabel}> Minimal Effect</Text>
+                </Text>
+                <Text style={styles.scoreRangeDescription}>
+                  Very low or no caffeine levels - little stimulation
+                </Text>
+              </View>
+              
               {/* What Score Changes Mean */}
               <Text style={styles.sectionTitle}>📈 Score Going UP</Text>
               <Text style={styles.trendDescription}>
@@ -3136,7 +3180,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     width: width - (Theme.spacing.lg * 2),
     paddingTop: 25, // Reduced to bring percentage closer to slider
-    paddingHorizontal: Theme.spacing.md, // Add horizontal padding to prevent thumb cutoff
+    paddingHorizontal: Theme.spacing.lg, // Increased from md to prevent thumb cutoff
   },
   percentageText: {
     ...Theme.fonts.sectionHeading,
@@ -3145,7 +3189,7 @@ const styles = StyleSheet.create({
     width: 50,
   },
   slider: {
-    width: width - (Theme.spacing.lg * 2) - (Theme.spacing.md * 2), // Reduce width to account for padding
+    width: width - (Theme.spacing.lg * 2) - (Theme.spacing.lg * 2), // Adjusted for increased padding
     height: 20,
   },
   customTimeInput: {
@@ -3919,5 +3963,28 @@ const styles = StyleSheet.create({
     color: Theme.colors.textPrimary,
     textAlign: 'center',
     width: 120,
+  },
+  scoreRangeItem: {
+    marginBottom: Theme.spacing.sm,
+  },
+  scoreRangeText: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
+  },
+  scoreRangeLabel: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 14,
+  },
+  scoreRangeDescription: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 12,
+  },
+  scoreRangeNumber: {
+    ...Theme.fonts.body,
+    color: Theme.colors.textSecondary,
+    fontSize: 16,
   },
 }); 

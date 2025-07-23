@@ -1,8 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Import the new organized notification classes
+import { DailyReminderNotification, SetupNotification } from './notifications';
 
 // Configure notification behavior - this is required
 Notifications.setNotificationHandler({
@@ -188,11 +191,7 @@ export class NotificationService {
    */
   static async scheduleSetupNotification(): Promise<void> {
     try {
-      await this.scheduleLocalNotification(
-        'Your Jitter notifications are set up!',
-        'You will receive alerts based on your caffeine levels.',
-        { type: 'setup_complete' }
-      );
+      await SetupNotification.sendSetupComplete();
       console.log('[NotificationService] ✅ Setup notification sent');
     } catch (error) {
       console.error('[NotificationService] ❌ Failed to schedule setup notification:', error);
@@ -445,40 +444,11 @@ export class NotificationService {
   }
 
   /**
-   * Schedule a repeating daily reminder at 10:00 AM local time for daily data entry.
+   * Schedule a repeating daily reminder at 6:00 AM local time for daily data entry.
    */
   static async scheduleDailyDataReminder(): Promise<string | null> {
     try {
-      // Avoid scheduling multiple times – check if already scheduled
-      const existingId = await AsyncStorage.getItem(this.DAILY_REMINDER_ID_KEY);
-      if (existingId) {
-        console.log('[NotificationService] ⏰ Daily reminder already scheduled:', existingId);
-        return existingId;
-      }
-
-      // Ensure notification permissions are granted
-      const enabled = await this.areNotificationsEnabled();
-      if (!enabled) {
-        console.log('[NotificationService] ⚠️ Notifications not enabled – skipping daily reminder');
-        return null;
-      }
-
-      const identifier = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Daily Jitter check-in',
-          body: 'Please update your sleep, stress, meal and exercise data for today.',
-          data: { type: 'daily_check_in' },
-        },
-        trigger: {
-          hour: 10,
-          minute: 0,
-          repeats: true,
-        } as any,
-      });
-
-      await AsyncStorage.setItem(this.DAILY_REMINDER_ID_KEY, identifier);
-      console.log('[NotificationService] ✅ Daily data reminder scheduled:', identifier);
-      return identifier;
+      return await DailyReminderNotification.schedule();
     } catch (error) {
       console.error('[NotificationService] ❌ Failed to schedule daily data reminder:', error);
       return null;
