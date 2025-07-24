@@ -29,12 +29,12 @@ export class PlanningService {
   /**
    * Calculate latest safe caffeine time to avoid sleep disruption
    */
-  static calculateLatestSafeCaffeineTime(
+  static async calculateLatestSafeCaffeineTime(
     bedtime: Date, 
     userProfile: UserProfile,
     sleepBufferHours: number
-  ): Date {
-    const personalizedHalfLife = CaffScoreService.calculatePersonalizedHalfLife(userProfile);
+  ): Promise<Date> {
+    const personalizedHalfLife = await CaffScoreService.calculatePersonalizedHalfLife(userProfile, null, new Date());
     
     // Calculate how many half-lives needed to reach 25mg (safe sleep level)
     const targetLevel = 25; // mg
@@ -114,7 +114,7 @@ export class PlanningService {
     const recommendations: CaffeineRecommendation[] = [];
     
     // Calculate latest safe caffeine time
-    const latestSafeCaffeineTime = this.calculateLatestSafeCaffeineTime(
+    const latestSafeCaffeineTime = await this.calculateLatestSafeCaffeineTime(
       bedtime, 
       userProfile, 
       preferences.sleepBufferHours

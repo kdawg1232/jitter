@@ -367,14 +367,15 @@ export class CaffScoreService {
   }
 
   /**
-   * Calculate food timing impact on caffeine absorption
-   * Recent food = slower absorption, empty stomach = faster absorption
+   * Calculate food timing impact on caffeine absorption and duration
+   * Recent food = slower absorption BUT longer duration (smoothed effect)
+   * Empty stomach = faster absorption but shorter, more intense peak
    */
-  private static calculateFoodTimingFactor(recentMealTimes: Date[], currentTime: Date): number {
+  private static calculateFoodTimingFactor(recentMealTimes: Date[], currentTime: Date): { absorptionDelay: number; durationExtension: number } {
     if (recentMealTimes.length === 0) {
-      // No meal data - assume moderate impact (empty stomach)
-      const result = 1.1;
-      console.log('[CaffScoreService] 🍽️ No meal data available, assuming empty stomach:', result.toFixed(3));
+      // No meal data - empty stomach means fast absorption, normal duration
+      const result = { absorptionDelay: 1.0, durationExtension: 1.0 };
+      console.log('[CaffScoreService] 🍽️ No meal data available, empty stomach - fast absorption:', result);
       return result;
     }
 
@@ -383,49 +384,63 @@ export class CaffScoreService {
     const lastMealTime = sorted[0];
     const hoursElapsed = (currentTime.getTime() - lastMealTime.getTime()) / (1000 * 60 * 60);
 
-    let foodFactor;
+    let absorptionDelay = 1.0;
+    let durationExtension = 1.0;
+    
     if (hoursElapsed < 0.5) {
-      // Very recent meal (< 30 min): significantly slows absorption
-      foodFactor = 0.7;
+      // Very recent meal (< 30 min): significantly delays absorption, extends duration
+      absorptionDelay = 0.6; // 40% slower absorption
+      durationExtension = 1.2; // 20% longer duration
     } else if (hoursElapsed < 1.5) {
-      // Recent meal (30 min - 1.5 hrs): moderately slows absorption
-      foodFactor = 0.8 + (hoursElapsed - 0.5) * 0.2; // 0.8 to 1.0
+      // Recent meal (30 min - 1.5 hrs): moderately delays absorption, slight extension
+      absorptionDelay = 0.7 + (hoursElapsed - 0.5) * 0.3; // 70% to 100% absorption speed
+      durationExtension = 1.15 - (hoursElapsed - 0.5) * 0.15; // 115% to 100% duration
     } else if (hoursElapsed < 4.0) {
-      // Somewhat recent meal (1.5 - 4 hrs): slight enhancement
-      foodFactor = 1.0 + (hoursElapsed - 1.5) * 0.04; // 1.0 to 1.1
+      // Somewhat recent meal (1.5 - 4 hrs): normal absorption, minimal effects
+      absorptionDelay = 1.0;
+      durationExtension = 1.0 + Math.max(0, (4.0 - hoursElapsed) * 0.02); // Up to 105% duration
     } else {
-      // Empty stomach (> 4 hrs): enhanced absorption
-      foodFactor = 1.1;
+      // Empty stomach (> 4 hrs): fast absorption, normal duration
+      absorptionDelay = 1.1; // 10% faster absorption
+      durationExtension = 1.0;
     }
 
-    // If there were two or more meals within last 4 hours, compound slowing effect (multiply by 0.9)
+    // If there were multiple meals within last 4 hours, compound the effects
     const mealsWithin4h = sorted.filter(t => (currentTime.getTime() - t.getTime()) / (1000 * 60 * 60) < 4);
     if (mealsWithin4h.length >= 2) {
-      foodFactor *= 0.9;
-      console.log('[CaffScoreService] 🍽️ Multiple meals within 4h detected – applying additional slowdown (×0.9)');
+      absorptionDelay *= 0.9; // Additional 10% absorption slowdown
+      durationExtension *= 1.1; // Additional 10% duration extension
+      console.log('[CaffScoreService] 🍽️ Multiple meals within 4h detected – additional smoothing effects');
     }
 
-    const result = Math.max(0.6, Math.min(1.2, foodFactor));
+    // Apply realistic bounds
+    absorptionDelay = Math.max(0.5, Math.min(1.2, absorptionDelay));
+    durationExtension = Math.max(1.0, Math.min(1.3, durationExtension));
 
-    console.log('[CaffScoreService] 🍽️ Food timing factor calculation:', {
+    const result = { absorptionDelay, durationExtension };
+
+    console.log('[CaffScoreService] 🍽️ Food timing effects calculation:', {
       hoursElapsed: hoursElapsed.toFixed(2),
       mealsIn4h: mealsWithin4h.length,
-      foodFactor: foodFactor.toFixed(3),
-      result: result.toFixed(3)
+      absorptionDelay: absorptionDelay.toFixed(3),
+      durationExtension: durationExtension.toFixed(3),
+      absorptionChange: ((1 - absorptionDelay) * 100).toFixed(1) + '% slower',
+      durationChange: ((durationExtension - 1) * 100).toFixed(1) + '% longer'
     });
 
     return result;
   }
 
   /**
-   * Calculate exercise impact on caffeine metabolism and focus
-   * Recent exercise = enhanced metabolism and focus
+   * Calculate exercise impact on cognitive focus and alertness
+   * Exercise enhances focus through increased blood flow and neurotransmitter activity
+   * Note: Metabolic effects on caffeine clearance are handled in half-life calculation
    */
   private static calculateExerciseFactor(exerciseData: ExerciseRecord | null, currentTime: Date): number {
     if (!exerciseData) {
       // No exercise data - neutral impact
       const result = 1.0;
-      console.log('[CaffScoreService] 🏃‍♂️ No exercise data available, neutral impact:', result.toFixed(3));
+      console.log('[CaffScoreService] 🏃‍♂️ No exercise data available, neutral cognitive impact:', result.toFixed(3));
       return result;
     }
     
@@ -435,33 +450,34 @@ export class CaffScoreService {
     if (exerciseData.exerciseType === 'starting') {
       // Currently exercising or just started
       if (hoursElapsed < 2.0) {
-        // Enhanced focus and metabolism during/after exercise
-        exerciseFactor = 1.2 - hoursElapsed * 0.05; // 1.2 to 1.1
+        // Enhanced cognitive focus during/after exercise
+        exerciseFactor = 1.1 - hoursElapsed * 0.025; // 1.1 to 1.05
       } else {
         // Benefits fade after 2 hours
-        exerciseFactor = 1.0 + Math.max(0, (4.0 - hoursElapsed) * 0.025); // 1.1 to 1.0
+        exerciseFactor = 1.0 + Math.max(0, (4.0 - hoursElapsed) * 0.0125); // 1.05 to 1.0
       }
     } else {
       // Completed exercise session
       if (hoursElapsed < 1.0) {
-        // Peak benefit in first hour after exercise
-        exerciseFactor = 1.15;
+        // Peak cognitive benefit in first hour after exercise
+        exerciseFactor = 1.08;
       } else if (hoursElapsed < 4.0) {
         // Gradual decline over 4 hours
-        exerciseFactor = 1.15 - (hoursElapsed - 1.0) * 0.05; // 1.15 to 1.0
+        exerciseFactor = 1.08 - (hoursElapsed - 1.0) * 0.027; // 1.08 to 1.0
       } else {
         // Benefits mostly gone after 4 hours
         exerciseFactor = 1.0;
       }
     }
     
-    const result = Math.max(1.0, Math.min(1.2, exerciseFactor));
+    const result = Math.max(1.0, Math.min(1.1, exerciseFactor));
     
-    console.log('[CaffScoreService] 🏃‍♂️ Exercise factor calculation:', {
+    console.log('[CaffScoreService] 🏃‍♂️ Exercise cognitive factor calculation:', {
       exerciseType: exerciseData.exerciseType,
       hoursElapsed: hoursElapsed.toFixed(2),
       exerciseFactor: exerciseFactor.toFixed(3),
-      result: result.toFixed(3)
+      result: result.toFixed(3),
+      note: 'Caffeine metabolism effects handled separately in half-life calculation'
     });
     
     return result;
@@ -469,16 +485,31 @@ export class CaffScoreService {
 
   /**
    * Calculate current caffeine activity factor
-   * Uses a simplified but reliable absorption model
+   * Uses a simplified but reliable absorption model with stress effects on gastric emptying
    */
   private static calculateCurrentCaffeineActivity(
     drinks: DrinkRecord[], 
     halfLife: number, 
-    currentTime: Date
+    currentTime: Date,
+    stressLevel?: number | null
   ): number {
     let totalActiveEffect = 0;
     
+    // Calculate stress effect on gastric emptying
+    let stressAbsorptionDelay = 1.0;
+    if (stressLevel !== null && stressLevel !== undefined && stressLevel > 5) {
+      // High stress slows gastric emptying by 10-20%
+      stressAbsorptionDelay = 1.0 + (stressLevel - 5) * 0.04; // 0-20% slower absorption
+    }
+    
     console.log('[CaffScoreService] 🔄 Current caffeine activity calculation for', drinks.length, 'drinks');
+    if (stressAbsorptionDelay > 1.0) {
+      console.log('[CaffScoreService] 😰 Stress absorption delay applied:', {
+        stressLevel,
+        absorptionDelay: stressAbsorptionDelay.toFixed(3),
+        slowdownPercent: ((stressAbsorptionDelay - 1) * 100).toFixed(1) + '%'
+      });
+    }
     
     drinks.forEach((drink, index) => {
       const hoursElapsed = (currentTime.getTime() - drink.timestamp.getTime()) / (1000 * 60 * 60);
@@ -487,14 +518,16 @@ export class CaffScoreService {
         // Use the same reliable calculation as currentCaffeineLevel
         let contribution = drink.actualCaffeineConsumed * Math.pow(2, -hoursElapsed / halfLife);
         
-        // Apply absorption factor based on time elapsed
-        if (hoursElapsed < 0.25) {
-          // Less than 15 minutes - early absorption phase
-          contribution *= 0.3 + (hoursElapsed / 0.25) * 0.4; // 30% to 70%
-        } else if (hoursElapsed < 1.0) {
-          // 15 minutes to 1 hour - peak absorption phase
-          contribution *= 0.7 + (hoursElapsed - 0.25) / 0.75 * 0.3; // 70% to 100%
-        } else if (hoursElapsed < 2.0) {
+        // Apply absorption factor based on time elapsed, modified by stress
+        const stressAdjustedHours = hoursElapsed / stressAbsorptionDelay; // Effective time accounting for delayed absorption
+        
+        if (stressAdjustedHours < 0.25) {
+          // Less than 15 minutes - early absorption phase (delayed by stress)
+          contribution *= 0.3 + (stressAdjustedHours / 0.25) * 0.4; // 30% to 70%
+        } else if (stressAdjustedHours < 1.0) {
+          // 15 minutes to 1 hour - peak absorption phase (delayed by stress)
+          contribution *= 0.7 + (stressAdjustedHours - 0.25) / 0.75 * 0.3; // 70% to 100%
+        } else if (stressAdjustedHours < 2.0) {
           // 1 to 2 hours - full absorption
           contribution *= 1.0;
         } else {
@@ -507,6 +540,7 @@ export class CaffScoreService {
         console.log(`[CaffScoreService] ⚡ Drink ${index + 1} current activity:`, {
           name: drink.name,
           hoursElapsed: hoursElapsed.toFixed(2),
+          stressAdjustedHours: stressAdjustedHours.toFixed(2),
           contribution: contribution.toFixed(1),
           timeToConsume: drink.timeToConsume
         });
@@ -522,6 +556,73 @@ export class CaffScoreService {
     });
     
     return result;
+  }
+
+  /**
+   * Calculate caffeine sensitivity factor based on sleep debt
+   * Sleep deprivation increases adenosine buildup, making caffeine more effective
+   * Research shows tired individuals get stronger effects from same caffeine dose
+   */
+  private static calculateCaffeineSensitivity(sleepDebtHours: number): number {
+    if (sleepDebtHours <= 0) {
+      return 1.0; // No sleep debt = normal sensitivity
+    }
+    
+    let sensitivityFactor = 1.0;
+    
+    if (sleepDebtHours <= 1.0) {
+      // Minimal sleep debt - slight sensitivity increase
+      sensitivityFactor = 1.0 + sleepDebtHours * 0.10; // 0-10% stronger effects
+    } else if (sleepDebtHours <= 3.0) {
+      // Moderate sleep debt - noticeable sensitivity increase
+      sensitivityFactor = 1.10 + (sleepDebtHours - 1.0) * 0.15; // 10-40% stronger effects
+    } else {
+      // Severe sleep debt - significant sensitivity increase but plateau for safety
+      sensitivityFactor = 1.40 + Math.min(sleepDebtHours - 3.0, 2.0) * 0.05; // 40-50% stronger effects (cap at 50%)
+    }
+    
+    console.log('[CaffScoreService] 😴 Caffeine sensitivity calculation:', {
+      sleepDebtHours: sleepDebtHours.toFixed(2),
+      sensitivityFactor: sensitivityFactor.toFixed(3),
+      effectIncrease: ((sensitivityFactor - 1) * 100).toFixed(1) + '%'
+    });
+    
+    return sensitivityFactor;
+  }
+
+  /**
+   * Calculate anxiety risk factor from high stress + high caffeine combination
+   * Research shows stress and caffeine have synergistic effects on anxiety
+   */
+  private static calculateAnxietyRisk(stressLevel: number | null, currentCaffeineLevel: number): number {
+    if (stressLevel === null || stressLevel <= 5) {
+      return 1.0; // Low stress = no anxiety penalty
+    }
+    
+    // High stress (6-10) combined with significant caffeine creates anxiety risk
+    if (currentCaffeineLevel < 100) {
+      return 1.0; // Low caffeine = no anxiety penalty even with stress
+    }
+    
+    // Calculate combined anxiety risk
+    const stressFactor = (stressLevel - 5) / 5; // 0.0 to 1.0 scale for stress 6-10
+    const caffeineFactor = Math.min((currentCaffeineLevel - 100) / 200, 1.0); // 0.0 to 1.0 for caffeine 100-300mg+
+    
+    // Synergistic effect: anxiety risk increases exponentially, not linearly
+    const combinedRisk = stressFactor * caffeineFactor;
+    const anxietyPenalty = 1.0 - (combinedRisk * 0.3); // Up to 30% score reduction for severe anxiety risk
+    
+    console.log('[CaffScoreService] 😰☕ Anxiety risk assessment:', {
+      stressLevel,
+      currentCaffeineLevel: currentCaffeineLevel.toFixed(1),
+      stressFactor: stressFactor.toFixed(3),
+      caffeineFactor: caffeineFactor.toFixed(3),
+      combinedRisk: combinedRisk.toFixed(3),
+      anxietyPenalty: anxietyPenalty.toFixed(3),
+      scoreReduction: ((1 - anxietyPenalty) * 100).toFixed(1) + '%'
+    });
+    
+    return anxietyPenalty;
   }
 
   /**
@@ -589,7 +690,13 @@ export class CaffScoreService {
     });
     
     // Calculate personalized half-life
-    const personalizedHalfLife = CaffScoreService.calculatePersonalizedHalfLife(userProfile);
+    const personalizedHalfLife = await CaffScoreService.calculatePersonalizedHalfLife(
+      userProfile, 
+      todayExerciseData, 
+      currentTime, 
+      effectiveSleepHours, 
+      todayStressLevel
+    );
     
     // Calculate current caffeine level
     const currentCaffeineLevel = CaffScoreService.calculateCurrentCaffeineLevel(validDrinks, personalizedHalfLife, currentTime);
@@ -623,12 +730,18 @@ export class CaffScoreService {
     const circadian = CaffScoreService.calculateCircadianFactor(currentTime);
     
     const focus = this.calculateFocusCapacity(sleepDebt, circadian, userProfile.age);
-    const currentActivity = this.calculateCurrentCaffeineActivity(validDrinks, personalizedHalfLife, currentTime);
+    const currentActivity = this.calculateCurrentCaffeineActivity(validDrinks, personalizedHalfLife, currentTime, todayStressLevel);
     
     // Calculate new daily tracking factors
     const stressFactor = this.calculateStressFactor(todayStressLevel);
-    const foodTimingFactor = this.calculateFoodTimingFactor(recentMealTimes, currentTime);
+    const foodTimingEffects = this.calculateFoodTimingFactor(recentMealTimes, currentTime);
     const exerciseFactor = this.calculateExerciseFactor(todayExerciseData, currentTime);
+    
+    // NEW: Calculate sleep-based caffeine sensitivity
+    const caffeineSensitivity = this.calculateCaffeineSensitivity(sleepDebt);
+    
+    // NEW: Calculate anxiety risk from stress + caffeine combination
+    const anxietyRisk = this.calculateAnxietyRisk(todayStressLevel, currentCaffeineLevel);
     
     console.log('[CaffScoreService] 🧠 All focus factors calculated:', {
       currentLevel: currentLevel.toFixed(3),
@@ -637,25 +750,29 @@ export class CaffScoreService {
       focus: focus.toFixed(3),
       currentActivity: currentActivity.toFixed(3),
       stressFactor: stressFactor.toFixed(3),
-      foodTimingFactor: foodTimingFactor.toFixed(3),
-      exerciseFactor: exerciseFactor.toFixed(3)
+      foodTimingAbsorption: foodTimingEffects.absorptionDelay.toFixed(3),
+      foodTimingDuration: foodTimingEffects.durationExtension.toFixed(3),
+      exerciseFactor: exerciseFactor.toFixed(3),
+      caffeineSensitivity: caffeineSensitivity.toFixed(3),
+      anxietyRisk: anxietyRisk.toFixed(3)
     });
     
     // Apply the enhanced CaffScore formula with new factors
-    // CaffScore = 100 × (C^1.2) × (R^0.1) × (T^0.25) × (F^0.25) × (A^0.4) × (S^0.15) × (M^0.1) × (E^0.1)
-    // MOD: rebalance component exponents
-    const currentLevelComponent = Math.pow(currentLevel, 1.0);          // Keep primary weight without extra non-linearity
+    // CaffScore = 100 × (C^1.0 × Sensitivity) × (R^0.25) × (T^0.25) × (F^0.25) × (A^0.35) × (S^0.15) × (M^0.1) × (E^0.1) × AnxietyRisk
+    // MOD: rebalance component exponents and add new scientific factors
+    const currentLevelComponent = Math.pow(currentLevel, 1.0) * caffeineSensitivity; // Apply sleep-based sensitivity
     const risingRateComponent = Math.pow(risingRate, 0.25);             // Give rising rate meaningful influence
     const toleranceComponent = Math.pow(tolerance, 0.25);               // Slightly reduced 
     const focusComponent = Math.pow(focus, 0.25);                       // Slightly reduced
     const activityComponent = Math.pow(currentActivity, 0.35);          // Slightly reduced
     const stressComponent = Math.pow(stressFactor, 0.15);               // New stress factor
-    // Clamp mod factors above 1 so they cannot boost score
-    const foodTimingComponent = Math.pow(Math.min(foodTimingFactor, 1.0), 0.1);
-    const exerciseComponent = Math.pow(Math.min(exerciseFactor, 1.0), 0.1);
+    // Food timing affects absorption but not overall score artificially
+    const foodTimingComponent = Math.pow(Math.min(foodTimingEffects.absorptionDelay, 1.0), 0.1);
+    // Exercise cognitive benefits are legitimate, so no clamping needed
+    const exerciseComponent = Math.pow(exerciseFactor, 0.1);
     
     const rawScore = 100 * currentLevelComponent * risingRateComponent * toleranceComponent * 
-                     focusComponent * activityComponent * stressComponent * foodTimingComponent * exerciseComponent;
+                     focusComponent * activityComponent * stressComponent * foodTimingComponent * exerciseComponent * anxietyRisk;
     
     console.log('[CaffScoreService] 🔢 Enhanced CaffScore components:', {
       currentLevelComponent: currentLevelComponent.toFixed(3),
@@ -666,6 +783,8 @@ export class CaffScoreService {
       stressComponent: stressComponent.toFixed(3),
       foodTimingComponent: foodTimingComponent.toFixed(3),
       exerciseComponent: exerciseComponent.toFixed(3),
+      caffeineSensitivity: caffeineSensitivity.toFixed(3),
+      anxietyRisk: anxietyRisk.toFixed(3),
       rawScore: rawScore.toFixed(1)
     });
     
@@ -722,9 +841,18 @@ export class CaffScoreService {
   }
 
   /**
-   * Calculate personalized caffeine half-life based on user factors
+   * Calculate personalized caffeine half-life based on user factors, exercise, sleep, and stress
+   * Exercise increases caffeine clearance by 15-25% during and after physical activity
+   * Sleep debt slows caffeine clearance by 15-20% due to impaired liver function
+   * Stress slows caffeine clearance by 20-30% due to cortisol effects on CYP1A2 enzyme
    */
-  static calculatePersonalizedHalfLife(userProfile: UserProfile): number {
+  static async calculatePersonalizedHalfLife(
+    userProfile: UserProfile, 
+    exerciseData?: ExerciseRecord | null, 
+    currentTime?: Date,
+    sleepDebtHours?: number,
+    stressLevel?: number | null
+  ): Promise<number> {
     let baseHalfLife = 5.0; // Standard 5 hours
     
     // Age factor (metabolism slows with age)
@@ -778,6 +906,98 @@ export class CaffScoreService {
       case 'very_fast':
         baseHalfLife *= 0.6;
         break;
+    }
+    
+    // NEW: Sleep debt effects on caffeine metabolism
+    // Research shows sleep deprivation impairs liver function and slows caffeine clearance
+    if (sleepDebtHours !== undefined && sleepDebtHours > 0) {
+      let sleepMetabolismFactor = 1.0;
+      
+      if (sleepDebtHours <= 1.0) {
+        // Minimal sleep debt - slight metabolic impairment
+        sleepMetabolismFactor = 1.0 + sleepDebtHours * 0.05; // 0-5% slower
+      } else if (sleepDebtHours <= 3.0) {
+        // Moderate sleep debt - noticeable metabolic impact
+        sleepMetabolismFactor = 1.05 + (sleepDebtHours - 1.0) * 0.075; // 5-20% slower
+      } else {
+        // Severe sleep debt - significant metabolic impairment
+        sleepMetabolismFactor = 1.20 + Math.min(sleepDebtHours - 3.0, 2.0) * 0.05; // 20-30% slower (cap at 30%)
+      }
+      
+      baseHalfLife *= sleepMetabolismFactor;
+      
+      console.log('[CaffScoreService] 😴 Sleep debt metabolism effect applied:', {
+        sleepDebtHours: sleepDebtHours.toFixed(2),
+        metabolismFactor: sleepMetabolismFactor.toFixed(3),
+        clearanceReduction: ((sleepMetabolismFactor - 1) * 100).toFixed(1) + '%'
+      });
+    }
+    
+    // NEW: Stress effects on caffeine metabolism
+    // Research shows cortisol from stress inhibits CYP1A2 enzyme activity
+    if (stressLevel !== null && stressLevel !== undefined && stressLevel > 3) {
+      let stressMetabolismFactor = 1.0;
+      
+      if (stressLevel <= 6) {
+        // Moderate stress (4-6) - mild metabolic impairment
+        stressMetabolismFactor = 1.0 + (stressLevel - 3) * 0.05; // 0-15% slower
+      } else {
+        // High stress (7-10) - significant metabolic impairment  
+        stressMetabolismFactor = 1.15 + (stressLevel - 6) * 0.04; // 15-31% slower
+      }
+      
+      baseHalfLife *= stressMetabolismFactor;
+      
+      console.log('[CaffScoreService] 😰 Stress metabolism effect applied:', {
+        stressLevel,
+        metabolismFactor: stressMetabolismFactor.toFixed(3),
+        clearanceReduction: ((stressMetabolismFactor - 1) * 100).toFixed(1) + '%'
+      });
+    }
+    
+    // NEW: Exercise effects on caffeine metabolism
+    // Research shows exercise increases caffeine clearance by 15-25% through enhanced liver metabolism
+    if (exerciseData && currentTime) {
+      const hoursElapsed = (currentTime.getTime() - exerciseData.exerciseTime.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursElapsed >= 0 && hoursElapsed <= 4.0) {
+        // Exercise effect fades over 4 hours post-exercise
+        let metabolismBoost = 1.0;
+        
+        if (exerciseData.exerciseType === 'starting') {
+          // Currently exercising - maximum metabolic enhancement
+          if (hoursElapsed < 1.0) {
+            metabolismBoost = 0.80; // 20% faster clearance (shorter half-life)
+          } else if (hoursElapsed < 2.0) {
+            metabolismBoost = 0.85; // 15% faster clearance
+          } else {
+            // Gradual return to baseline over next 2 hours
+            metabolismBoost = 0.85 + (hoursElapsed - 2.0) * 0.075; // 15% to 0% boost
+          }
+        } else {
+          // Completed exercise session
+          if (hoursElapsed < 0.5) {
+            // Peak metabolic enhancement immediately post-exercise
+            metabolismBoost = 0.80; // 20% faster clearance
+          } else if (hoursElapsed < 2.0) {
+            // Sustained enhanced metabolism for first 2 hours
+            metabolismBoost = 0.85; // 15% faster clearance
+          } else {
+            // Gradual return to baseline over hours 2-4
+            metabolismBoost = 0.85 + (hoursElapsed - 2.0) * 0.075; // 15% to 0% boost
+          }
+        }
+        
+        baseHalfLife *= metabolismBoost;
+        
+        console.log('[CaffScoreService] 🏃‍♂️ Exercise metabolism boost applied:', {
+          exerciseType: exerciseData.exerciseType,
+          hoursElapsed: hoursElapsed.toFixed(2),
+          metabolismBoost: metabolismBoost.toFixed(3),
+          newHalfLife: baseHalfLife.toFixed(2),
+          clearanceIncrease: ((1 - metabolismBoost) * 100).toFixed(1) + '%'
+        });
+      }
     }
     
     return Math.min(Math.max(baseHalfLife, 2.0), 24.0); // MOD: Clamp half-life to 2–24 h range

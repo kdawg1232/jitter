@@ -223,9 +223,10 @@ export class WidgetService {
       const lastDrink = sortedDrinks.length > 0 ? sortedDrinks[0] : null;
       
       // Calculate current caffeine level
+      const personalizedHalfLife = await CaffScoreService.calculatePersonalizedHalfLife(userProfile, null, new Date());
       const currentCaffeineLevel = CaffScoreService.calculateCurrentCaffeineLevel(
         last24HoursDrinks,
-        CaffScoreService.calculatePersonalizedHalfLife(userProfile),
+        personalizedHalfLife,
         new Date()
       );
       

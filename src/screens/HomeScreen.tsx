@@ -1754,9 +1754,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onProfileCleared }) => {
                               <Text style={styles.drinkName}>{drink.name}</Text>
                               <Text style={styles.drinkTime}>{drink.timeToConsume}</Text>
                             </View>
-                            <Text style={styles.drinkCaffeine}>
-                              {drink.actualCaffeineConsumed}mg caffeine consumed
-                            </Text>
+                            <View style={styles.drinkItemFooter}>
+                              <Text style={styles.drinkCaffeine}>
+                                {drink.actualCaffeineConsumed}mg caffeine consumed
+                              </Text>
+                              <Text style={styles.drinkTimestamp}>
+                                {drink.timestamp.toLocaleTimeString('en-US', {
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true
+                                })}
+                              </Text>
+                            </View>
                           </>
                         )}
                       </TouchableOpacity>
@@ -3270,6 +3279,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.xs,
   },
+  drinkItemFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   drinkName: {
     ...Theme.fonts.sectionHeading,
     color: Theme.colors.textPrimary,
@@ -3280,9 +3294,15 @@ const styles = StyleSheet.create({
     color: Theme.colors.textSecondary,
     fontWeight: '500',
   },
+  drinkTimestamp: {
+    ...Theme.fonts.caption,
+    color: Theme.colors.textTertiary,
+    textAlign: 'right',
+  },
   drinkCaffeine: {
     ...Theme.fonts.caption,
     color: Theme.colors.textSecondary,
+    flex: 1,
   },
   drinkItemDeleting: {
     backgroundColor: Theme.colors.accentRed,
