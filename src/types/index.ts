@@ -200,6 +200,7 @@ export interface DayScoreRecord {
   date: string;                // YYYY-MM-DD format
   averagePeakScore: number;    // Average CaffScore for the day
   totalCaffeine: number;       // Total caffeine consumed on this day
+  displayColor: string;        // Color that should be displayed on the calendar for this day
   createdAt: Date;
 }
 
@@ -208,6 +209,7 @@ export interface CalendarDayData {
   dayNumber: number;           // Day of the month (1-31)
   totalCaffeine: number;       // Total caffeine for this day
   averagePeakScore?: number;   // Average peak score if day is complete
+  displayColor?: string;       // Stored color from DayScoreRecord if available
   isToday: boolean;            // Whether this is the current day
   hasData: boolean;            // Whether there's any data for this day
 }

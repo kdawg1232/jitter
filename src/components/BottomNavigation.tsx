@@ -26,7 +26,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   const tabs: { key: TabType; label: string; icon?: string; iconSource?: any }[] = [
     { key: 'home', label: 'home', iconSource: require('../../assets/houseicon.png') },
     { key: 'stats', label: 'stats', iconSource: require('../../assets/statsicon.png') },
-    { key: 'winnings', label: 'winnings', iconSource: require('../../assets/winningsicon.png') },
+    // { key: 'winnings', label: 'winnings', iconSource: require('../../assets/winningsicon.png') }, // Hidden for V1, will be re-enabled in V2
     { key: 'settings', label: 'settings', iconSource: require('../../assets/settingsicon.png') },
   ];
 

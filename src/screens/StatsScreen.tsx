@@ -222,18 +222,24 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           continue;
         }
 
-        // Determine background color
+        // Determine background color - use stored color if available, otherwise calculate
         let backgroundColor = Theme.colors.cardBg;
         
         if (dayData.hasData) {
-          const score = dayData.averagePeakScore;
-          
-          if (score !== undefined) {
-            // Use score for color
-            backgroundColor = getScoreColor(score);
+          // Check if we have stored display color from DayScoreRecord
+          if (dayData.displayColor) {
+            backgroundColor = dayData.displayColor;
           } else {
-            // Use caffeine for color if no score
-            backgroundColor = getCaffeineColor(dayData.totalCaffeine);
+            // Fall back to calculating color from current data
+            const score = dayData.averagePeakScore;
+            
+            if (score !== undefined) {
+              // Use score for color
+              backgroundColor = getScoreColor(score);
+            } else {
+              // Use caffeine for color if no score
+              backgroundColor = getCaffeineColor(dayData.totalCaffeine);
+            }
           }
         }
 
@@ -305,11 +311,15 @@ export const StatsScreen: React.FC<StatsScreenProps> = ({ refreshTrigger }) => {
           const averagePeakScore = totalPeakScore / scoreCount;
           const totalCaffeine = yesterdayDrinks.reduce((sum, drink) => sum + drink.actualCaffeineConsumed, 0);
           
+          // Calculate display color based on the score
+          const displayColor = getScoreColor(averagePeakScore);
+          
           const dayScore: DayScoreRecord = {
             userId: userProfile.userId,
             date: yesterdayKey,
             averagePeakScore,
             totalCaffeine,
+            displayColor,
             createdAt: new Date()
           };
           

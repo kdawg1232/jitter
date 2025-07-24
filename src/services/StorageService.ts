@@ -815,13 +815,13 @@ export class StorageService {
   // Calendar and Daily Score Operations
   static async saveDayScores(dayScores: DayScoreRecord[]): Promise<void> {
     try {
-      // Keep only last 90 days of scores
-      const ninetyDaysAgo = new Date();
-      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+      // Keep only last 365 days of scores (1 year)
+      const oneYearAgo = new Date();
+      oneYearAgo.setDate(oneYearAgo.getDate() - 365);
       
       const recentScores = dayScores.filter(score => {
         const scoreDate = new Date(score.date);
-        return scoreDate >= ninetyDaysAgo;
+        return scoreDate >= oneYearAgo;
       });
 
       await AsyncStorage.setItem(STORAGE_KEYS.DAY_SCORES, JSON.stringify(recentScores));
@@ -1219,6 +1219,7 @@ export class StorageService {
           dayNumber: day,
           totalCaffeine,
           averagePeakScore: dayScore?.averagePeakScore,
+          displayColor: dayScore?.displayColor,
           isToday: dateKey === todayKey,
           hasData: dayDrinks.length > 0 || !!dayScore
         });

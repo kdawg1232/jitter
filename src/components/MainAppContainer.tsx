@@ -137,7 +137,8 @@ export const MainAppContainer: React.FC<MainAppContainerProps> = ({ onProfileCle
         return <HomeScreen onProfileCleared={onProfileCleared} />;
       }
       case 'winnings':
-        return <WinningsScreen />;
+        // Winnings screen hidden for V1, redirect to home
+        return <HomeScreen onProfileCleared={onProfileCleared} />;
       case 'settings':
         return renderSettingsScreen();
       default:
