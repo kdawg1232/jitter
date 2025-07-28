@@ -211,7 +211,7 @@ export class WidgetService {
       
       // Ensure caffScore is never null/undefined to prevent JSON serialization crash
       let caffScore = focusResult?.score ?? 0;
-      if (caffScore === null || caffScore === undefined || isNaN(caffScore)) {
+      if (caffScore === null || caffScore === undefined || isNaN(caffScore) || !Number.isFinite(caffScore)) {
         console.warn('[WidgetService] ⚠️ CaffScore calculation returned null/NaN, using fallback value 0');
         caffScore = 0;
       }
@@ -222,13 +222,20 @@ export class WidgetService {
       );
       const lastDrink = sortedDrinks.length > 0 ? sortedDrinks[0] : null;
       
-      // Calculate current caffeine level
+      // Calculate current caffeine level and ensure it is a finite number (JSON cannot encode NaN / Infinity)
       const personalizedHalfLife = await CaffScoreService.calculatePersonalizedHalfLife(userProfile, null, new Date());
-      const currentCaffeineLevel = CaffScoreService.calculateCurrentCaffeineLevel(
+      const currentCaffeineLevelRaw = CaffScoreService.calculateCurrentCaffeineLevel(
         last24HoursDrinks,
         personalizedHalfLife,
         new Date()
       );
+
+      // Round and sanitize – fall back to 0 if the value is not a real finite number
+      let currentCaffeineLevel = Math.round(currentCaffeineLevelRaw);
+      if (!Number.isFinite(currentCaffeineLevel) || isNaN(currentCaffeineLevel)) {
+        console.warn('[WidgetService] ⚠️ currentCaffeineLevel calculation returned NaN/∞, using fallback value 0');
+        currentCaffeineLevel = 0;
+      }
       
       // Calculate next optimal time (simplified - 2-3 hours after last drink)
       let nextOptimalTime: string | null = null;
@@ -239,8 +246,8 @@ export class WidgetService {
       }
       
       const widgetData: WidgetData = {
-        caffScore: Math.round(caffScore), // Use the safe caffScore value
-        currentCaffeineLevel: Math.round(currentCaffeineLevel),
+        caffScore: Math.round(caffScore), // Already sanitized above
+        currentCaffeineLevel,
         lastDrinkTime: lastDrink ? lastDrink.timestamp.toISOString() : null,
         lastDrinkName: lastDrink ? lastDrink.name : null,
         nextOptimalTime,

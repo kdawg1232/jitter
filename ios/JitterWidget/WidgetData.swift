@@ -1,8 +1,9 @@
 import Foundation
 
 struct JitterWidgetData: Codable {
-    let caffScore: Int // This is the CaffScore from React Native
-    let currentCaffeineLevel: Int
+    // Use Double to allow decoding of both Int and floating-point numbers coming from JSON
+    let caffScore: Double // CaffScore from React Native (0-100)
+    let currentCaffeineLevel: Double
     let lastDrinkTime: String?
     let lastDrinkName: String?
     let nextOptimalTime: String?
@@ -10,7 +11,7 @@ struct JitterWidgetData: Codable {
     let userId: String
     
     static let placeholder = JitterWidgetData(
-        caffScore: 54, // Using 54 as shown in the mascot sketch
+        caffScore: 54,
         currentCaffeineLevel: 120,
         lastDrinkTime: nil,
         lastDrinkName: "Coffee",

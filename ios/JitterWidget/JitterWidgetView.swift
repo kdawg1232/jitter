@@ -33,7 +33,7 @@ struct CaffScoreView: View {
             }
             
             // CaffScore Number - Use placeholder if no data
-            Text("\(data?.caffScore ?? 54)")
+            Text("\(Int(data?.caffScore ?? 54))")
                 .font(.system(size: 32, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.primary)
             
@@ -72,7 +72,7 @@ struct CaffScoreView: View {
                 .fill(Color(red: 0.953, green: 0.925, blue: 1.0)) // #F3ECFF
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Jitter CaffScore: \(data?.caffScore ?? 54)")
+        .accessibilityLabel("Jitter CaffScore: \(Int(data?.caffScore ?? 54))")
     }
     
     private var progressPercentage: CGFloat {
@@ -81,8 +81,8 @@ struct CaffScoreView: View {
     }
     
     private var progressBarColor: Color {
-        let score = data?.caffScore ?? 54
-        switch score {
+        let intScore = Int(data?.caffScore ?? 54)
+        switch intScore {
         case 80...:
             return Color(red: 0.184, green: 0.741, blue: 0.376) // #2FBD60 - Primary Green
         case 50...79:
@@ -95,7 +95,7 @@ struct CaffScoreView: View {
     }
     
     private func getStatusText() -> String {
-        let score = data?.caffScore ?? 54
+        let score = Int(data?.caffScore ?? 54)
         
         // Always return a status, even for placeholder
         switch score {

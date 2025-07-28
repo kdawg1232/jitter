@@ -19,7 +19,7 @@ struct JitterWidgetProvider: TimelineProvider {
         let data = WidgetDataManager.shared.getWidgetData()
         let session = WidgetDataManager.shared.getDrinkSession()
         
-        logger.info("📸 Snapshot data: CaffScore=\(data?.caffScore ?? -1), HasSession=\(session != nil)")
+        logger.info("📸 Snapshot data: CaffScore=\(data?.caffScore ?? -1.0), HasSession=\(session != nil)")
         
         let entry = JitterWidgetEntry(date: Date(), data: data, session: session)
         completion(entry)
@@ -32,7 +32,7 @@ struct JitterWidgetProvider: TimelineProvider {
         let data = WidgetDataManager.shared.getWidgetData()
         let session = WidgetDataManager.shared.getDrinkSession()
         
-        logger.info("⏰ Timeline data: CaffScore=\(data?.caffScore ?? -1), Caffeine=\(data?.currentCaffeineLevel ?? -1)mg, HasSession=\(session != nil)")
+        logger.info("⏰ Timeline data: CaffScore=\(data?.caffScore ?? -1.0), Caffeine=\(data?.currentCaffeineLevel ?? -1.0)mg, HasSession=\(session != nil)")
         
         // ENHANCED DEBUG LOGGING
         logger.info("🔍 DEVICE DEBUG - Widget Configuration Details:")
