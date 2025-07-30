@@ -7,6 +7,7 @@ export { PlanningService } from './PlanningService';
 export { NotificationService } from './NotificationService';
 export { BackgroundService } from './BackgroundService';
 export { calculateStatus, StatusResult, StatusTrend } from './StatusService';
+export { RevenueCatService } from './RevenueCatService';
 
 // Organized notification classes
 export * from './notifications'; 

@@ -42,6 +42,7 @@
     },
     "plugins": [
       "expo-dev-client",
+      "react-native-purchases",
       [
         "expo-build-properties",
         {
@@ -57,6 +58,7 @@
       ]
     ],
     "extra": {
+      "REVENUECAT_API_KEY": "appl_jWGzYXmgCeFskgoihZPfcxMVohN",
       "eas": {
         "projectId": "80e2351b-d387-4219-b6e3-6d82e92a7f39"
       }

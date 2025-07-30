@@ -3,7 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GetStartedScreen } from './src/screens';
 import { MainAppContainer } from './src/components';
 import { OnboardingContainer } from './src/screens/onboarding';
-import { StorageService, DeepLinkService, NotificationService, BackgroundService } from './src/services';
+import { StorageService, DeepLinkService, NotificationService, BackgroundService, RevenueCatService } from './src/services';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'getStarted' | 'onboarding' | 'main'>('getStarted');
@@ -46,6 +46,9 @@ export default function App() {
       
       // Initialize notification service
       await NotificationService.initialize();
+
+      // Configure RevenueCat SDK
+      await RevenueCatService.initialize();
 
       // Register background task for periodic CaffScore checks
       await BackgroundService.registerCaffScoreTask();
